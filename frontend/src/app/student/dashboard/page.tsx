@@ -25,9 +25,25 @@ export default function StudentDashboard() {
   };
 
   useEffect(() => {
-    // Kiểm tra đăng nhập
-    const token = localStorage.getItem('student_token');
-    const userStr = localStorage.getItem('student_user');
+    // Kiểm tra đăng nhập với cơ chế đa tầng an toàn cho Safari
+    const getStored = (k: string) => {
+      try {
+        const v = localStorage.getItem(k);
+        if (v) return v;
+      } catch (_) {}
+      try {
+        const v = sessionStorage.getItem(k);
+        if (v) return v;
+      } catch (_) {}
+      try {
+        const m = document.cookie.match(new RegExp('(^| )' + k + '=([^;]+)'));
+        if (m) return decodeURIComponent(m[2]);
+      } catch (_) {}
+      return null;
+    };
+
+    const token = getStored('student_token');
+    const userStr = getStored('student_user');
     
     if (!token || !userStr) {
       router.push('/student/login');
