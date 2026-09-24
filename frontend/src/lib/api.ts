@@ -1,7 +1,7 @@
 import { db, auth } from '@/lib/firebase';
 import { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, orderBy } from 'firebase/firestore';
 import { initializeApp } from 'firebase/app';
-import { getAuth, createUserWithEmailAndPassword, updateEmail, updatePassword } from 'firebase/auth';
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateEmail, updatePassword } from 'firebase/auth';
 import { v4 as uuidv4 } from 'uuid';
 
 // Secondary app to create users without logging out the current admin
@@ -14,6 +14,29 @@ const secondaryApp = initializeApp({
   appId: "1:623974736852:web:007f7f29b885ccd958ac41"
 }, "SecondaryAPI");
 const secondaryAuth = getAuth(secondaryApp);
+
+// Tài khoản hệ thống xác thực phiên đọc Firestore cho Cổng Học Viên khi chưa đăng nhập
+const STUDENT_SYSTEM_EMAIL = "student.system@nhanphu.edu.vn";
+const STUDENT_SYSTEM_PASSWORD = "NhanPhu@Student2026";
+
+export const ensureStudentFirebaseAuth = async () => {
+  if (auth.currentUser) return auth.currentUser;
+  try {
+    const cred = await signInWithEmailAndPassword(auth, STUDENT_SYSTEM_EMAIL, STUDENT_SYSTEM_PASSWORD);
+    return cred.user;
+  } catch (err: any) {
+    if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
+      try {
+        const newCred = await createUserWithEmailAndPassword(auth, STUDENT_SYSTEM_EMAIL, STUDENT_SYSTEM_PASSWORD);
+        return newCred.user;
+      } catch (createErr) {
+        console.warn('Could not create student system auth user:', createErr);
+      }
+    }
+    console.warn('ensureStudentFirebaseAuth warning:', err?.message || err);
+  }
+  return null;
+};
 
 // Helper to mimic Axios response structure since components expect `res.data`
 const toRes = (data: any) => ({ data });
@@ -873,6 +896,7 @@ export const initApi = {
     });
   },
   getStudentDashboardData: async (phone: string) => {
+    await ensureStudentFirebaseAuth();
     const stuSnap = await getDocs(query(collection(db, 'students'), where('phone', '==', phone)));
     if (stuSnap.empty) throw new Error('Student not found');
     const studentId = stuSnap.docs[0].id;
@@ -1164,6 +1188,9 @@ export const aiApi = {
 };
 export const studentAuthApi = {
   login: async (data: any) => {
+    // 0. Đảm bảo phiên Firebase Auth hợp lệ (để tránh lỗi permission-denied trên điện thoại chưa có session admin)
+    await ensureStudentFirebaseAuth();
+
     const rawPhone = (data?.phone || '').toString().trim();
     const rawPassword = (data?.password || '').toString().trim();
 
@@ -1248,6 +1275,7 @@ export const studentAuthApi = {
     return toRes({ token: 'student-token', user: studentData });
   },
   checkIn: async (sessionId: string) => {
+    await ensureStudentFirebaseAuth();
     const userStr = typeof window !== 'undefined' ? localStorage.getItem('student_user') : null;
     if (!userStr) throw new Error('Chưa đăng nhập');
     const student = JSON.parse(userStr);
