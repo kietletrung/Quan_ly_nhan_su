@@ -1,13 +1,14 @@
 'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { GraduationCap, LogIn, Phone, Lock, AlertCircle } from 'lucide-react';
+import { GraduationCap, LogIn, Phone, Lock, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { studentAuthApi } from '@/lib/api';
 
 export default function StudentLoginPage() {
   const router = useRouter();
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -16,8 +17,12 @@ export default function StudentLoginPage() {
     setLoading(true);
     setError('');
 
+    // Làm sạch khoảng trắng do bàn phím điện thoại tự động thêm vào
+    const cleanPhone = phone.trim().replace(/[\s\.\-\(\)]/g, '');
+    const cleanPassword = password.trim();
+
     try {
-      const res = await studentAuthApi.login({ phone, password });
+      const res = await studentAuthApi.login({ phone: cleanPhone, password: cleanPassword });
       if (res.data && res.data.token) {
         // Lưu token và thông tin user
         localStorage.setItem('student_token', res.data.token);
@@ -46,8 +51,8 @@ export default function StudentLoginPage() {
 
         {error && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 12, background: 'rgba(255, 59, 48, 0.1)', color: 'var(--accent-red)', borderRadius: 12, marginBottom: 20, fontSize: 14 }}>
-            <AlertCircle size={18} />
-            {error}
+            <AlertCircle size={18} style={{ flexShrink: 0 }} />
+            <span>{error}</span>
           </div>
         )}
 
@@ -65,6 +70,10 @@ export default function StudentLoginPage() {
                 placeholder="Nhập số điện thoại của bạn"
                 value={phone}
                 onChange={e => setPhone(e.target.value)}
+                inputMode="tel"
+                autoComplete="tel"
+                autoCapitalize="none"
+                autoCorrect="off"
                 required
               />
             </div>
@@ -77,18 +86,61 @@ export default function StudentLoginPage() {
                 <Lock size={18} />
               </div>
               <input 
-                type="password" 
+                type={showPassword ? 'text' : 'password'} 
                 className="form-input" 
-                style={{ paddingLeft: 42 }}
+                style={{ paddingLeft: 42, paddingRight: 42 }}
                 placeholder="Mật khẩu mặc định"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
+                autoComplete="current-password"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck="false"
                 required
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                style={{
+                  position: 'absolute',
+                  right: 12,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 4
+                }}
+                tabIndex={-1}
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
             </div>
-            <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--text-muted)', textAlign: 'right' }}>
-              *Mật khẩu mặc định: NhanPhu2026
-            </p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                *Mật khẩu mặc định: <strong>NhanPhu2026</strong>
+              </span>
+              <button 
+                type="button"
+                onClick={() => setPassword('NhanPhu2026')}
+                style={{
+                  fontSize: 12,
+                  color: 'var(--accent-blue)',
+                  background: 'rgba(0, 122, 255, 0.08)',
+                  border: '1px solid rgba(0, 122, 255, 0.2)',
+                  borderRadius: 6,
+                  padding: '2px 8px',
+                  cursor: 'pointer',
+                  fontWeight: 600
+                }}
+              >
+                Điền nhanh
+              </button>
+            </div>
           </div>
 
           <button 

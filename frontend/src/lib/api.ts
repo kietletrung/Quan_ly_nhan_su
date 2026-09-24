@@ -1164,29 +1164,88 @@ export const aiApi = {
 };
 export const studentAuthApi = {
   login: async (data: any) => {
-    const { phone, password } = data;
-    if (password !== 'NhanPhu2026') {
-      throw { response: { data: { error: 'Mật khẩu không chính xác' } } };
-    }
-    
-    // Normalize phone to check multiple formats (with 0, without 0, with +84)
-    const normalizedPhone = phone.replace(/^(\+84|84)/, '0');
-    const phoneWithoutZero = normalizedPhone.startsWith('0') ? normalizedPhone.slice(1) : normalizedPhone;
-    const phoneWithZero = `0${phoneWithoutZero}`;
-    const phoneWith84 = `84${phoneWithoutZero}`;
-    const phoneWithPlus84 = `+84${phoneWithoutZero}`;
-    
-    const phoneVariants = [phone, normalizedPhone, phoneWithoutZero, phoneWithZero, phoneWith84, phoneWithPlus84];
-    // Remove duplicates
-    const uniqueVariants = Array.from(new Set(phoneVariants)).slice(0, 10); // Firestore 'in' limit is 10
+    const rawPhone = (data?.phone || '').toString().trim();
+    const rawPassword = (data?.password || '').toString().trim();
 
-    const snap = await getDocs(query(collection(db, 'students'), where('phone', 'in', uniqueVariants)));
-    if (snap.empty) {
-      throw { response: { data: { error: 'Không tìm thấy học viên với số điện thoại này' } } };
+    if (!rawPhone) {
+      throw { response: { data: { error: 'Vui lòng nhập số điện thoại' } } };
     }
-    
-    const student = { id: snap.docs[0].id, ...snap.docs[0].data() };
-    return toRes({ token: 'student-token', user: student });
+    if (!rawPassword) {
+      throw { response: { data: { error: 'Vui lòng nhập mật khẩu' } } };
+    }
+
+    // 1. Trích xuất chỉ các chữ số để chuẩn hóa số điện thoại
+    const digitsOnly = rawPhone.replace(/\D/g, '');
+    if (!digitsOnly) {
+      throw { response: { data: { error: 'Số điện thoại không hợp lệ' } } };
+    }
+
+    // Các biến thể số điện thoại (0xxxx, xxxx, 84xxxx, +84xxxx, có khoảng cách/dấu chấm)
+    const noZero = digitsOnly.startsWith('84') 
+      ? digitsOnly.slice(2) 
+      : (digitsOnly.startsWith('0') ? digitsOnly.slice(1) : digitsOnly);
+    const withZero = `0${noZero}`;
+    const with84 = `84${noZero}`;
+    const withPlus84 = `+84${noZero}`;
+
+    const spaced = withZero.length === 10 ? `${withZero.slice(0, 4)} ${withZero.slice(4, 7)} ${withZero.slice(7)}` : withZero;
+    const dotted = withZero.length === 10 ? `${withZero.slice(0, 4)}.${withZero.slice(4, 7)}.${withZero.slice(7)}` : withZero;
+    const dashed = withZero.length === 10 ? `${withZero.slice(0, 4)}-${withZero.slice(4, 7)}-${withZero.slice(7)}` : withZero;
+
+    const phoneVariants = Array.from(new Set([
+      rawPhone,
+      digitsOnly,
+      withZero,
+      noZero,
+      with84,
+      withPlus84,
+      spaced,
+      dotted,
+      dashed
+    ])).slice(0, 10); // Giới hạn Firestore 'in' query tối đa 10 phần tử
+
+    // 2. Tìm học viên qua Firestore query
+    let studentDoc: any = null;
+    try {
+      const snap = await getDocs(query(collection(db, 'students'), where('phone', 'in', phoneVariants)));
+      if (!snap.empty) {
+        studentDoc = snap.docs[0];
+      }
+    } catch (e) {
+      console.warn('Lỗi query phone in variants, chuyển sang tìm kiếm quét số:', e);
+    }
+
+    // 3. Cơ chế dự phòng (Fallback): Nếu chưa tìm thấy do định dạng lạ trong database, quét toàn bộ học viên so khớp chữ số
+    if (!studentDoc) {
+      const allStudentsSnap = await getDocs(collection(db, 'students'));
+      const found = allStudentsSnap.docs.find(d => {
+        const p = (d.data().phone || '').toString().replace(/\D/g, '');
+        return p === digitsOnly || p === withZero || p === noZero || p === with84;
+      });
+      if (found) {
+        studentDoc = found;
+      }
+    }
+
+    if (!studentDoc) {
+      throw { response: { data: { error: 'Không tìm thấy học viên với số điện thoại này. Vui lòng kiểm tra lại số điện thoại.' } } };
+    }
+
+    // 4. Kiểm tra mật khẩu (Hỗ trợ mật khẩu mặc định NhanPhu2026 không phân biệt hoa thường, hoặc mật khẩu riêng nếu có)
+    const studentData = { id: studentDoc.id, ...studentDoc.data() };
+    const customPassword = studentData.password ? String(studentData.password).trim() : null;
+
+    const isPasswordValid = 
+      rawPassword === 'NhanPhu2026' || 
+      rawPassword.toLowerCase() === 'nhanphu2026' ||
+      (customPassword && rawPassword === customPassword) ||
+      (customPassword && rawPassword.toLowerCase() === customPassword.toLowerCase());
+
+    if (!isPasswordValid) {
+      throw { response: { data: { error: 'Mật khẩu không chính xác. Mật khẩu mặc định là NhanPhu2026' } } };
+    }
+
+    return toRes({ token: 'student-token', user: studentData });
   },
   checkIn: async (sessionId: string) => {
     const userStr = typeof window !== 'undefined' ? localStorage.getItem('student_user') : null;
