@@ -1,12 +1,15 @@
 import { NextResponse } from 'next/server';
 import { getGeminiApiKey } from '@/lib/getGeminiApiKey';
+import * as mammoth from 'mammoth';
+import * as XLSX from 'xlsx';
 
 export async function POST(req: Request) {
   try {
-    const { base64Pdf, clientGeminiKey } = await req.json();
+    const { base64File, base64Pdf, fileName, fileType, clientGeminiKey } = await req.json();
 
-    if (!base64Pdf) {
-      return NextResponse.json({ success: false, error: 'Thiếu dữ liệu file PDF' }, { status: 400 });
+    const rawData = base64File || base64Pdf;
+    if (!rawData) {
+      return NextResponse.json({ success: false, error: 'Thiếu dữ liệu file tải lên' }, { status: 400 });
     }
 
     const apiKey = clientGeminiKey || await getGeminiApiKey();
@@ -18,14 +21,19 @@ export async function POST(req: Request) {
       }, { status: 400 });
     }
 
+    const name = (fileName || '').toLowerCase();
+    const ext = name.substring(name.lastIndexOf('.'));
+    const declaredType = (fileType || '').toLowerCase();
+
     const prompt = `
-Bạn là một trợ lý AI chuyên nghiệp phục vụ cho trung tâm giáo dục HRM Nhân Phú.
-Nhiệm vụ của bạn là đọc và phân tích nội dung đề thi từ file PDF đính kèm. Bạn phải đọc trực tiếp cấu trúc từ file PDF (kể cả Furigana, tiếng Nhật, tiếng Việt) và trích xuất TOÀN BỘ câu hỏi thành danh sách JSON mảng theo định dạng mẫu sau:
+Bạn là một trợ lý AI giáo dục chuyên nghiệp phục vụ cho trung tâm giáo dục & đào tạo Nhân Phú.
+Nhiệm vụ của bạn là đọc hiểu, phân tích nội dung đề thi / bài tập / tài liệu được cung cấp (từ file PDF, hình ảnh chụp đề thi, tài liệu Word .docx, bảng tính Excel .xlsx, hoặc văn bản text).
+Bạn phải đọc kỹ toàn bộ nội dung (hỗ trợ tốt tiếng Nhật bao gồm Kanji/Hiragana/Katakana, tiếng Hàn, tiếng Anh, tiếng Việt, toán học...) và trích xuất hoặc tự động sinh TOÀN BỘ danh sách câu hỏi thành JSON mảng theo định dạng mẫu:
 [
   {
     "id": "chuỗi_id_ngẫu_nhiên_9_ký_tự",
     "type": "MULTIPLE_CHOICE",
-    "text": "Nội dung câu hỏi trắc nghiệm (ví dụ: Từ nào sau đây có nghĩa là xin chào trong tiếng Nhật?)",
+    "text": "Nội dung câu hỏi trắc nghiệm (ví dụ: Từ nào sau đây có nghĩa là 'xin chào' trong tiếng Nhật?)",
     "options": [
       { "id": "A", "text": "Konnichiwa" },
       { "id": "B", "text": "Sayonara" },
@@ -40,17 +48,114 @@ Nhiệm vụ của bạn là đọc và phân tích nội dung đề thi từ fi
     "type": "SHORT_ANSWER",
     "text": "Nội dung câu hỏi điền từ hoặc tự luận ngắn (ví dụ: Điền từ thích hợp vào chỗ trống: Watashi wa ... desu.)",
     "options": [],
-    "correctAnswer": "nihonjin",
+    "correctAnswer": "Gakusei",
     "points": 10
   }
 ]
 
-Yêu cầu chi tiết:
-1. Đối với mỗi câu hỏi, kiểm tra loại của câu đó để gán "type" là "MULTIPLE_CHOICE" (nếu là trắc nghiệm có các lựa chọn A, B, C, D) hoặc "SHORT_ANSWER" (nếu là tự luận, điền từ vào ô trống). Đề thi tiếng Nhật điền khuyết như "1. _____ のところに何を入れますか" là SHORT_ANSWER.
-2. Tạo chuỗi ID ngẫu nhiên có độ dài 9 ký tự (chữ và số) cho trường "id" của từng câu hỏi để đảm bảo tính duy nhất.
-3. Chú ý: Phải bỏ qua Furigana (chữ nhỏ) hoặc phiên âm rác, chỉ đọc hiểu cấu trúc thực tế của câu hỏi để trả về tiếng Nhật/Việt chính xác.
-4. Quan trọng nhất: CHỈ trả về dữ liệu JSON mảng thuần túy, không được bọc trong thẻ markdown \`\`\`json hay bất kỳ văn bản giải thích nào khác ngoài chuỗi mảng JSON sạch để hệ thống dễ dàng JSON.parse(). Không được bình luận thêm.
+Yêu cầu chi tiết và quy tắc xử lý:
+1. PHÂN LOẠI CÂU HỎI:
+   - "MULTIPLE_CHOICE": Nếu câu hỏi có các lựa chọn A, B, C, D (hoặc 1, 2, 3, 4 -> hãy chuẩn hóa thành A, B, C, D). "options" phải là mảng các đối tượng { "id": "A", "text": "..." }, "correctAnswer" là mã chữ cái đáp án đúng (ví dụ "A").
+   - "SHORT_ANSWER": Nếu là câu hỏi tự luận, câu hỏi điền vào chỗ trống (như "1. _____ のところに何を入れますか"), dịch câu hoặc câu hỏi trả lời ngắn. "options" để mảng rỗng [], "correctAnswer" là đáp án chuẩn hoặc từ cần điền.
+2. XÁC ĐỊNH ĐÁP ÁN:
+   - Nếu trong tài liệu có sẵn đáp án (khoanh tròn, in đậm, gạch chân, hoặc có bảng đáp án ở cuối), hãy trích xuất chính xác đáp án đó.
+   - Nếu trong tài liệu không ghi sẵn đáp án, bạn hãy suy luận và giải câu hỏi đó để đưa ra đáp án chính xác nhất làm "correctAnswer".
+3. TRƯỜNG HỢP TÀI LIỆU KHÔNG PHẢI ĐỀ THI SẴN:
+   - Nếu tài liệu tải lên là danh sách từ vựng, ngữ pháp, bài đọc hiểu, hoặc danh sách kiến thức (Word/Excel/Text/Ảnh), hãy thông minh tự động tạo ra bộ câu hỏi kiểm tra kiến thức (trắc nghiệm và điền từ) bám sát nội dung của tài liệu đó.
+4. ĐỊNH DẠNG VÀ TÍNH DUY NHẤT:
+   - Mỗi câu hỏi phải có trường "id" là chuỗi ngẫu nhiên 9 ký tự (ví dụ: "q_a8f9c2d1e").
+   - "points": Mặc định là 10 (hoặc chia đều phù hợp).
+   - Hãy bỏ qua Furigana rác hoặc ký tự nhiễu OCR, giữ nguyên độ chính xác của từ ngữ tiếng Nhật, Hàn, Anh, Việt.
+5. QUY TẮC PHẢN HỒI (CỰC KỲ QUAN TRỌNG):
+   - CHỈ trả về dữ liệu JSON mảng thuần túy [ ... ], KHÔNG được bọc trong thẻ markdown \`\`\`json hay bất kỳ văn bản giải thích nào ngoài chuỗi JSON sạch để hệ thống parse trực tiếp bằng JSON.parse().
 `;
+
+    let geminiParts: any[] = [];
+    const fileBuffer = Buffer.from(rawData, 'base64');
+
+    // 1. Xử lý file Word (.docx, .doc)
+    if (ext === '.docx' || ext === '.doc' || declaredType.includes('word') || declaredType.includes('officedocument.wordprocessingml')) {
+      try {
+        const mammothResult = await mammoth.extractRawText({ buffer: fileBuffer });
+        const docText = mammothResult.value.trim();
+        if (!docText) {
+          return NextResponse.json({ success: false, error: 'File Word không có nội dung văn bản để trích xuất.' }, { status: 400 });
+        }
+        geminiParts = [
+          { text: prompt + `\n\n--- TÀI LIỆU WORD ĐÍNH KÈM: ${fileName || 'Tài liệu Word'} ---\n${docText}` }
+        ];
+      } catch (err: any) {
+        if (ext === '.doc') {
+          return NextResponse.json({ 
+            success: false, 
+            error: 'File Word định dạng .doc cũ không được hỗ trợ trực tiếp. Vui lòng mở file và lưu lại dưới dạng .docx hoặc .pdf rồi tải lên lại.' 
+          }, { status: 400 });
+        }
+        return NextResponse.json({ success: false, error: 'Lỗi khi đọc file Word: ' + err.message }, { status: 400 });
+      }
+    }
+    // 2. Xử lý file Excel (.xlsx, .xls, .csv)
+    else if (ext === '.xlsx' || ext === '.xls' || ext === '.csv' || declaredType.includes('spreadsheet') || declaredType.includes('excel') || declaredType.includes('csv')) {
+      try {
+        const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
+        const sheetTexts: string[] = [];
+        for (const sheetName of workbook.SheetNames) {
+          const sheet = workbook.Sheets[sheetName];
+          const csv = XLSX.utils.sheet_to_csv(sheet);
+          if (csv.trim()) {
+            sheetTexts.push(`[Sheet: ${sheetName}]\n${csv}`);
+          }
+        }
+        const excelContent = sheetTexts.join('\n\n').trim();
+        if (!excelContent) {
+          return NextResponse.json({ success: false, error: 'File Excel không có nội dung dữ liệu.' }, { status: 400 });
+        }
+        geminiParts = [
+          { text: prompt + `\n\n--- DỮ LIỆU EXCEL / BẢNG TÍNH ĐÍNH KÈM: ${fileName || 'Bang_tinh.xlsx'} ---\n${excelContent}` }
+        ];
+      } catch (err: any) {
+        return NextResponse.json({ success: false, error: 'Lỗi khi đọc file Excel: ' + err.message }, { status: 400 });
+      }
+    }
+    // 3. Xử lý file Text / Markdown (.txt, .md, .json)
+    else if (ext === '.txt' || ext === '.md' || ext === '.json' || declaredType.startsWith('text/')) {
+      const textContent = fileBuffer.toString('utf-8').trim();
+      if (!textContent) {
+        return NextResponse.json({ success: false, error: 'File văn bản trống.' }, { status: 400 });
+      }
+      geminiParts = [
+        { text: prompt + `\n\n--- NỘI DUNG VĂN BẢN ĐÍNH KÈM: ${fileName || 'document.txt'} ---\n${textContent}` }
+      ];
+    }
+    // 4. Xử lý Hình ảnh (.png, .jpg, .jpeg, .webp, .heic)
+    else if (ext === '.png' || ext === '.jpg' || ext === '.jpeg' || ext === '.webp' || ext === '.heic' || declaredType.startsWith('image/')) {
+      let imageMime = 'image/jpeg';
+      if (ext === '.png' || declaredType.includes('png')) imageMime = 'image/png';
+      else if (ext === '.webp' || declaredType.includes('webp')) imageMime = 'image/webp';
+      else if (ext === '.heic' || declaredType.includes('heic')) imageMime = 'image/heic';
+
+      geminiParts = [
+        { text: prompt + `\n\n(Tài liệu ảnh đính kèm: ${fileName || 'Hinh_anh_de_thi'})` },
+        {
+          inlineData: {
+            mimeType: imageMime,
+            data: rawData
+          }
+        }
+      ];
+    }
+    // 5. Mặc định là PDF (hoặc fallback PDF)
+    else {
+      geminiParts = [
+        { text: prompt + `\n\n(Tài liệu PDF đính kèm: ${fileName || 'De_thi.pdf'})` },
+        {
+          inlineData: {
+            mimeType: 'application/pdf',
+            data: rawData
+          }
+        }
+      ];
+    }
 
     // Gọi Gemini REST API
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`, {
@@ -61,15 +166,7 @@ Yêu cầu chi tiết:
       body: JSON.stringify({
         contents: [
           {
-            parts: [
-              { text: prompt },
-              {
-                inlineData: {
-                  mimeType: "application/pdf",
-                  data: base64Pdf
-                }
-              }
-            ]
+            parts: geminiParts
           }
         ],
         generationConfig: {
@@ -100,12 +197,15 @@ Yêu cầu chi tiết:
 
     try {
       const parsedQuestions = JSON.parse(cleanJson);
-      return NextResponse.json({ success: true, questions: parsedQuestions, method: 'gemini_ai' });
+      if (!Array.isArray(parsedQuestions)) {
+        throw new Error('Dữ liệu không phải là danh sách câu hỏi hợp lệ.');
+      }
+      return NextResponse.json({ success: true, questions: parsedQuestions, method: 'gemini_multimodal_ai' });
     } catch (parseErr) {
       console.error('Lỗi parse JSON từ Gemini:', responseText, parseErr);
       return NextResponse.json({ 
         success: false, 
-        error: 'Dữ liệu trả về từ AI không đúng định dạng JSON. Vui lòng thử lại.',
+        error: 'Dữ liệu trả về từ AI không đúng định dạng JSON danh sách câu hỏi. Vui lòng thử lại.',
         raw: responseText 
       }, { status: 500 });
     }

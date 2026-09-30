@@ -294,16 +294,23 @@ export default function TestsPage({ params }: { params: Promise<{ id: string }> 
   const [builderData, setBuilderData] = useState<any>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const [parsingPdf, setParsingPdf] = useState(false);
+  const [parsingFileName, setParsingFileName] = useState('');
 
-  const handlePdfImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.type !== 'application/pdf') {
-      alert('Vui lòng chỉ chọn file định dạng PDF.');
+    const allowedExtensions = ['.pdf', '.docx', '.doc', '.xlsx', '.xls', '.csv', '.png', '.jpg', '.jpeg', '.webp', '.txt', '.md'];
+    const fileName = file.name;
+    const ext = fileName.substring(fileName.lastIndexOf('.')).toLowerCase();
+    
+    if (!allowedExtensions.includes(ext)) {
+      alert('Định dạng file chưa được hỗ trợ. Vui lòng chọn file PDF, Word (.docx), Excel (.xlsx, .xls, .csv), Ảnh (.png, .jpg, .jpeg) hoặc Text (.txt).');
+      if (pdfInputRef.current) pdfInputRef.current.value = '';
       return;
     }
 
+    setParsingFileName(fileName);
     setParsingPdf(true);
     try {
       const reader = new FileReader();
@@ -324,7 +331,13 @@ export default function TestsPage({ params }: { params: Promise<{ id: string }> 
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ base64Pdf: base64Data, clientGeminiKey })
+          body: JSON.stringify({ 
+            base64File: base64Data,
+            base64Pdf: base64Data, // backward compatibility
+            fileName: file.name,
+            fileType: file.type || ext,
+            clientGeminiKey 
+          })
         });
 
         const resData = await res.json();
@@ -337,25 +350,28 @@ export default function TestsPage({ params }: { params: Promise<{ id: string }> 
               ...resData.questions
             ]
           }));
-          alert(`Đã nhập thành công ${resData.questions.length} câu hỏi trích xuất từ file PDF bằng AI!`);
+          alert(`Đã nhập thành công ${resData.questions.length} câu hỏi trích xuất từ file "${fileName}" bằng AI!`);
         } else {
           if (resData.error === 'MISSING_GEMINI_KEY' || resData.error === 'INVALID_GEMINI_KEY') {
             setShowGeminiModal(true);
           } else {
-            alert('Lỗi: ' + (resData.error || 'Không thể trích xuất câu hỏi từ đề thi này.'));
+            alert('Lỗi: ' + (resData.error || resData.message || 'Không thể trích xuất câu hỏi từ file này.'));
           }
         }
         setParsingPdf(false);
+        setParsingFileName('');
       };
       reader.onerror = () => {
-        alert('Lỗi đọc file PDF.');
+        alert('Lỗi khi đọc file tải lên.');
         setParsingPdf(false);
+        setParsingFileName('');
       };
       reader.readAsDataURL(file);
     } catch (err: any) {
       console.error(err);
       alert('Đã xảy ra lỗi: ' + err.message);
       setParsingPdf(false);
+      setParsingFileName('');
     }
 
     if (pdfInputRef.current) pdfInputRef.current.value = '';
@@ -697,19 +713,31 @@ export default function TestsPage({ params }: { params: Promise<{ id: string }> 
                       <div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                           <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>Nội dung Đề thi ({builderData.questions.length} câu)</h3>
-                          <div style={{ display: 'flex', gap: 8 }}>
-                            <input type="file" ref={pdfInputRef} accept=".pdf" onChange={handlePdfImport} style={{ display: 'none' }} />
+                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                            <input 
+                              type="file" 
+                              ref={pdfInputRef} 
+                              accept=".pdf,.docx,.doc,.xlsx,.xls,.csv,.png,.jpg,.jpeg,.webp,.txt" 
+                              onChange={handleFileImport} 
+                              style={{ display: 'none' }} 
+                            />
                             <button className="btn btn-secondary btn-sm" onClick={() => addQuestion('MULTIPLE_CHOICE')}>+ Trắc nghiệm</button>
                             <button className="btn btn-secondary btn-sm" onClick={() => addQuestion('SHORT_ANSWER')}>+ Điền từ</button>
-                            <button className="btn btn-secondary btn-sm" onClick={() => pdfInputRef.current?.click()} style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0' }} disabled={parsingPdf}>
-                              <Upload size={14} style={{ marginRight: 4 }} /> Nhập PDF (AI)
+                            <button 
+                              className="btn btn-secondary btn-sm" 
+                              onClick={() => pdfInputRef.current?.click()} 
+                              style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', fontWeight: 600 }} 
+                              disabled={parsingPdf}
+                              title="Tải lên file PDF, Word (.docx), Excel (.xlsx), Ảnh chụp bài tập/đề thi, hoặc Text để AI tự đọc và tạo câu hỏi"
+                            >
+                              <Upload size={14} style={{ marginRight: 4 }} /> Nhập Đề thi AI (PDF, Word, Excel, Ảnh...)
                             </button>
                           </div>
                         </div>
 
                         {parsingPdf && (
                           <div style={{ padding: 16, background: '#fef3c7', border: '1px solid #f59e0b', borderRadius: 8, color: '#b45309', display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-                            <Clock size={16} className="spinner" /> Đang sử dụng AI để đọc và trích xuất câu hỏi từ file PDF. Quá trình này có thể mất 15-30 giây, vui lòng đợi...
+                            <Clock size={16} className="spinner" /> Đang sử dụng AI để đọc hiểu và trích xuất câu hỏi từ {parsingFileName ? `file "${parsingFileName}"` : 'tài liệu'}. Quá trình này có thể mất 15-30 giây, vui lòng đợi...
                           </div>
                         )}
 
