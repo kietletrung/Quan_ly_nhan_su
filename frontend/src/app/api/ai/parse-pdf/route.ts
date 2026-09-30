@@ -102,8 +102,13 @@ Yêu cầu chi tiết và quy tắc xử lý:
         for (const sheetName of workbook.SheetNames) {
           const sheet = workbook.Sheets[sheetName];
           const csv = XLSX.utils.sheet_to_csv(sheet);
-          if (csv.trim()) {
-            sheetTexts.push(`[Sheet: ${sheetName}]\n${csv}`);
+          // Loại bỏ các dòng trống rỗng không có chữ
+          const cleanLines = csv
+            .split('\n')
+            .filter(line => line.replace(/[,;\t\s\r]/g, '').length > 0)
+            .join('\n');
+          if (cleanLines.trim()) {
+            sheetTexts.push(`[Sheet: ${sheetName}]\n${cleanLines}`);
           }
         }
         const excelContent = sheetTexts.join('\n\n').trim();
@@ -157,58 +162,121 @@ Yêu cầu chi tiết và quy tắc xử lý:
       ];
     }
 
-    // Gọi Gemini REST API
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: geminiParts
+    // Danh sách các model Gemini được ưu tiên thử nghiệm (nếu model đầu bị quá tải, tự động chuyển model tiếp theo)
+    const CANDIDATE_MODELS = [
+      'gemini-2.0-flash',
+      'gemini-1.5-flash',
+      'gemini-2.5-flash',
+      'gemini-1.5-flash-8b',
+      'gemini-1.5-pro',
+      'gemini-flash-latest'
+    ];
+
+    let lastErrorMsg = '';
+    let parsedQuestions: any[] | null = null;
+    let successfulModel = '';
+
+    for (const model of CANDIDATE_MODELS) {
+      try {
+        console.log(`[Gemini AI] Đang gọi model: ${model}...`);
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: geminiParts
+              }
+            ],
+            generationConfig: {
+              temperature: 0.1,
+              responseMimeType: "application/json"
+            }
+          })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          const errMsg = data.error?.message || `Lỗi HTTP ${response.status} từ model ${model}`;
+          console.warn(`[Gemini AI] Model ${model} gặp lỗi:`, errMsg);
+          lastErrorMsg = errMsg;
+
+          // Nếu API Key sai thì dừng ngay để người dùng kiểm tra key
+          if (data.error?.code === 403 || errMsg.toLowerCase().includes('api key not valid') || errMsg.toLowerCase().includes('invalid api key')) {
+            return NextResponse.json({ 
+              success: false, 
+              error: 'INVALID_GEMINI_KEY', 
+              message: 'API Key Google Gemini không hợp lệ hoặc đã hết hạn.' 
+            }, { status: 400 });
           }
-        ],
-        generationConfig: {
-          temperature: 0.1,
-          responseMimeType: "application/json"
+
+          // Nếu model đang quá tải hoặc gặp lỗi tạm thời (high demand, 503, 429, 404), chờ 600ms rồi thử model tiếp theo
+          await new Promise(r => setTimeout(r, 600));
+          continue;
         }
-      })
-    });
 
-    const data = await response.json();
+        const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        
+        // Dọn dẹp chuỗi JSON nếu Gemini tự động bọc trong ```json
+        let cleanJson = responseText.trim();
+        if (cleanJson.startsWith('```')) {
+          cleanJson = cleanJson.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
+        }
 
-    if (!response.ok) {
-      console.error('Gemini API Error:', data);
-      let errorMsg = data.error?.message || 'Lỗi không xác định từ máy chủ Google Gemini';
-      if (data.error?.code === 403 || errorMsg.includes('API key not valid')) {
-        return NextResponse.json({ success: false, error: 'INVALID_GEMINI_KEY', message: 'API Key không hợp lệ hoặc đã hết hạn.' }, { status: 400 });
+        try {
+          const result = JSON.parse(cleanJson);
+          if (Array.isArray(result) && result.length > 0) {
+            parsedQuestions = result;
+            successfulModel = model;
+            console.log(`[Gemini AI] Thành công trích xuất ${result.length} câu hỏi với model: ${model}`);
+            break; // Thành công
+          } else if (Array.isArray(result) && result.length === 0) {
+            console.warn(`[Gemini AI] Model ${model} trả về 0 câu hỏi, thử model dự phòng tiếp theo...`);
+            parsedQuestions = result;
+            successfulModel = model;
+          }
+        } catch (parseErr) {
+          console.warn(`[Gemini AI] Lỗi parse JSON từ model ${model}:`, cleanJson);
+          lastErrorMsg = 'Dữ liệu trả về từ AI không đúng định dạng JSON.';
+          continue;
+        }
+      } catch (networkErr: any) {
+        console.warn(`[Gemini AI] Lỗi mạng khi gọi model ${model}:`, networkErr.message);
+        lastErrorMsg = networkErr.message;
+        continue;
       }
-      return NextResponse.json({ success: false, error: errorMsg }, { status: 500 });
     }
 
-    const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    
-    // Dọn dẹp chuỗi JSON nếu Gemini tự động bọc trong ```json
-    let cleanJson = responseText.trim();
-    if (cleanJson.startsWith('```')) {
-      cleanJson = cleanJson.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
-    }
-
-    try {
-      const parsedQuestions = JSON.parse(cleanJson);
-      if (!Array.isArray(parsedQuestions)) {
-        throw new Error('Dữ liệu không phải là danh sách câu hỏi hợp lệ.');
-      }
-      return NextResponse.json({ success: true, questions: parsedQuestions, method: 'gemini_multimodal_ai' });
-    } catch (parseErr) {
-      console.error('Lỗi parse JSON từ Gemini:', responseText, parseErr);
+    if (parsedQuestions && parsedQuestions.length > 0) {
       return NextResponse.json({ 
-        success: false, 
-        error: 'Dữ liệu trả về từ AI không đúng định dạng JSON danh sách câu hỏi. Vui lòng thử lại.',
-        raw: responseText 
-      }, { status: 500 });
+        success: true, 
+        questions: parsedQuestions, 
+        modelUsed: successfulModel,
+        method: 'gemini_multimodal_ai' 
+      });
     }
+
+    // Nếu tất cả các model đều gặp sự cố quá tải
+    let friendlyError = lastErrorMsg || 'Không thể trích xuất câu hỏi từ file.';
+    const lowerErr = lastErrorMsg.toLowerCase();
+    if (
+      lowerErr.includes('high demand') ||
+      lowerErr.includes('overloaded') ||
+      lowerErr.includes('resourceexhausted') ||
+      lowerErr.includes('503') ||
+      lowerErr.includes('quota')
+    ) {
+      friendlyError = 'Máy chủ Google Gemini đang gặp tình trạng quá tải tạm thời (Spikes in demand). Hệ thống đã tự động thử các model dự phòng (2.0-flash, 1.5-flash, 1.5-pro) nhưng Google vẫn đang bận. Vui lòng bấm thử lại sau 15-30 giây!';
+    }
+
+    return NextResponse.json({ 
+      success: false, 
+      error: friendlyError,
+      rawError: lastErrorMsg 
+    }, { status: 500 });
 
   } catch (error: any) {
     console.error('Lỗi API parse-pdf (Gemini):', error);
