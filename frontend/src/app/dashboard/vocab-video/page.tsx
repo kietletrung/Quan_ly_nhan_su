@@ -297,8 +297,8 @@ export default function VocabVideoGenerator() {
   const [pointingPairs, setPointingPairs] = useState<PointingPair[]>(DEFAULT_POINTING_PAIRS);
   const [pointingCurrentPairIdx, setPointingCurrentPairIdx] = useState<number>(0);
   const [pointingCharacterMedia, setPointingCharacterMedia] = useState<{ url: string; type: 'image' | 'video' } | null>({
-    url: '/pointing-girl.png',
-    type: 'image'
+    url: '/sample-pointing.mp4',
+    type: 'video'
   });
   const [pointingCardTopOffset, setPointingCardTopOffset] = useState<number>(90);
   const [showAiPairsModal, setShowAiPairsModal] = useState<boolean>(false);
@@ -2008,14 +2008,14 @@ export default function VocabVideoGenerator() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <button
                         type="button"
-                        onClick={() => setPointingCharacterMedia({ url: '/pointing-girl.png', type: 'image' })}
+                        onClick={() => setPointingCharacterMedia({ url: '/sample-pointing.mp4', type: 'video' })}
                         className={`text-xs px-2.5 py-1.5 rounded-lg border font-bold transition-all ${
-                          pointingCharacterMedia?.url === '/pointing-girl.png'
+                          pointingCharacterMedia?.url === '/sample-pointing.mp4'
                             ? 'bg-teal-600 text-white border-teal-600'
                             : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
                         }`}
                       >
-                        👩 Học sinh chỉ tay (Mẫu)
+                        🎬 Video cô giáo chỉ tay (Chuyển động thực tế)
                       </button>
 
                       <label className="cursor-pointer text-xs px-2.5 py-1.5 rounded-lg border border-dashed border-teal-400 bg-white hover:bg-teal-50 text-teal-700 font-bold flex items-center gap-1">
@@ -2328,8 +2328,8 @@ export default function VocabVideoGenerator() {
               aspectRatio: '9/16',
               borderRadius: isRecording ? 0 : 24, 
               boxShadow: isRecording ? 'none' : '0 10px 30px rgba(0,0,0,0.1)',
-              background: bgColor.startsWith('linear-gradient') ? bgColor : undefined,
-              backgroundColor: bgColor.startsWith('linear-gradient') ? undefined : bgColor
+              background: displayMode === 'pointing' ? '#0f172a' : (bgColor.startsWith('linear-gradient') ? bgColor : undefined),
+              backgroundColor: displayMode === 'pointing' ? '#0f172a' : (bgColor.startsWith('linear-gradient') ? undefined : bgColor)
             }}
           >
             {/* Background Media Render */}
@@ -2344,13 +2344,15 @@ export default function VocabVideoGenerator() {
             )}
 
             {/* Header / Logo space */}
-            <div className="pt-6 pb-2 w-full flex items-center justify-center shrink-0 z-10 relative">
-              <img 
-                src="https://nhanphuphuyen.edu.vn/wp-content/uploads/2026/08/Gemini_Generated_Image_c5cnlnc5cnlnc5cn-removebg-preview.png" 
-                alt="Du học Nhân Phú Logo" 
-                className={`h-16 md:h-20 object-contain drop-shadow-md ${displayMode === 'story' ? 'opacity-80' : ''}`}
-              />
-            </div>
+            {displayMode !== 'pointing' && (
+              <div className="pt-6 pb-2 w-full flex items-center justify-center shrink-0 z-10 relative">
+                <img 
+                  src="https://nhanphuphuyen.edu.vn/wp-content/uploads/2026/08/Gemini_Generated_Image_c5cnlnc5cnlnc5cn-removebg-preview.png" 
+                  alt="Du học Nhân Phú Logo" 
+                  className={`h-16 md:h-20 object-contain drop-shadow-md ${displayMode === 'story' ? 'opacity-80' : ''}`}
+                />
+              </div>
+            )}
 
             {/* Dynamic Grid Container (VOCAB MODE - Giao diện lưới 3x3 gốc) */}
             {displayMode === 'vocab' && (
