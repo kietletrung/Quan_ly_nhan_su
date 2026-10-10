@@ -296,11 +296,20 @@ export default function VocabVideoGenerator() {
   // Pointing / Pitch Accent State (Chỉ tay so sánh từ vựng)
   const [pointingPairs, setPointingPairs] = useState<PointingPair[]>(DEFAULT_POINTING_PAIRS);
   const [pointingCurrentPairIdx, setPointingCurrentPairIdx] = useState<number>(0);
-  const [pointingCharacterMedia, setPointingCharacterMedia] = useState<{ url: string; type: 'image' | 'video' } | null>({
-    url: '/sample-pointing.mp4',
-    type: 'video'
+  const [pointingCharacterMedia, setPointingCharacterMedia] = useState<{
+    url: string;
+    type: 'image' | 'video' | 'pair';
+    leftUrl?: string;
+    rightUrl?: string;
+  } | null>({
+    url: '/presenter-point-left.jpg',
+    type: 'pair',
+    leftUrl: '/presenter-point-left.jpg',
+    rightUrl: '/presenter-point-right.jpg'
   });
-  const [pointingCardTopOffset, setPointingCardTopOffset] = useState<number>(90);
+  const [pointingCardTopOffset, setPointingCardTopOffset] = useState<number>(60);
+  const [pointingCleanBackdrop, setPointingCleanBackdrop] = useState<boolean>(true);
+  const [pointingMaskHeight, setPointingMaskHeight] = useState<number>(50);
   const [showAiPairsModal, setShowAiPairsModal] = useState<boolean>(false);
   const [aiPairsTopic, setAiPairsTopic] = useState<string>('Từ đồng âm tiếng Nhật N5 (Pitch Accent)');
   const [isGeneratingAiPairs, setIsGeneratingAiPairs] = useState<boolean>(false);
@@ -2008,14 +2017,37 @@ export default function VocabVideoGenerator() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <button
                         type="button"
-                        onClick={() => setPointingCharacterMedia({ url: '/sample-pointing.mp4', type: 'video' })}
-                        className={`text-xs px-2.5 py-1.5 rounded-lg border font-bold transition-all ${
-                          pointingCharacterMedia?.url === '/sample-pointing.mp4'
-                            ? 'bg-teal-600 text-white border-teal-600'
+                        onClick={() => {
+                          setPointingCharacterMedia({
+                            url: '/presenter-point-left.jpg',
+                            type: 'pair',
+                            leftUrl: '/presenter-point-left.jpg',
+                            rightUrl: '/presenter-point-right.jpg'
+                          });
+                          setPointingCardTopOffset(60);
+                        }}
+                        className={`text-xs px-2.5 py-1.5 rounded-lg border font-bold transition-all flex items-center gap-1.5 ${
+                          pointingCharacterMedia?.type === 'pair'
+                            ? 'bg-teal-600 text-white border-teal-600 shadow-sm'
                             : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
                         }`}
                       >
-                        🎬 Video cô giáo chỉ tay (Chuyển động thực tế)
+                        👩‍🏫 Cô giáo áo xanh (Chỉ đổi tay Trái 👈 / Phải 👉)
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPointingCharacterMedia({ url: '/sample-pointing.mp4', type: 'video' });
+                          setPointingCardTopOffset(90);
+                        }}
+                        className={`text-xs px-2.5 py-1.5 rounded-lg border font-bold transition-all ${
+                          pointingCharacterMedia?.url === '/sample-pointing.mp4'
+                            ? 'bg-teal-600 text-white border-teal-600 shadow-sm'
+                            : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        🎬 Video cô giáo Ngân Anh
                       </button>
 
                       <label className="cursor-pointer text-xs px-2.5 py-1.5 rounded-lg border border-dashed border-teal-400 bg-white hover:bg-teal-50 text-teal-700 font-bold flex items-center gap-1">
@@ -2063,6 +2095,33 @@ export default function VocabVideoGenerator() {
                       <span className="text-xs font-black text-teal-800 shrink-0 w-8">
                         {pointingCardTopOffset}px
                       </span>
+                    </div>
+
+                    {/* Clean Backdrop Mask Controls */}
+                    <div className="pt-2 border-t border-teal-200/60 space-y-1.5">
+                      <label className="flex items-center gap-2 cursor-pointer text-[11px] font-bold text-teal-900 select-none">
+                        <input
+                          type="checkbox"
+                          checked={pointingCleanBackdrop}
+                          onChange={e => setPointingCleanBackdrop(e.target.checked)}
+                          className="rounded text-teal-600 focus:ring-teal-500 w-3.5 h-3.5"
+                        />
+                        🧹 Tự động che sạch chữ cũ trên video nền (Studio Clean Mask)
+                      </label>
+                      {pointingCleanBackdrop && (
+                        <div className="flex items-center gap-3 pl-5">
+                          <span className="text-[10px] text-teal-700 font-medium shrink-0">Độ cao che:</span>
+                          <input
+                            type="range"
+                            min="35"
+                            max="65"
+                            value={pointingMaskHeight}
+                            onChange={e => setPointingMaskHeight(Number(e.target.value))}
+                            className="w-full accent-teal-600 cursor-pointer h-1.5"
+                          />
+                          <span className="text-[10px] font-bold text-teal-800 shrink-0">{pointingMaskHeight}%</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -2974,7 +3033,7 @@ export default function VocabVideoGenerator() {
 
               return (
                 <div className="flex-1 w-full flex flex-col z-10 relative overflow-hidden h-full">
-                  {/* Background Presenter Media (Image / Video of student pointing) */}
+                  {/* Background Presenter Media (Image / Video of teacher pointing) */}
                   {pointingCharacterMedia && (
                     <div className="absolute inset-0 z-0 flex items-end justify-center pointer-events-none select-none overflow-hidden">
                       {pointingCharacterMedia.type === 'video' ? (
@@ -2986,6 +3045,25 @@ export default function VocabVideoGenerator() {
                           playsInline
                           className="w-full h-full object-cover object-bottom"
                         />
+                      ) : pointingCharacterMedia.type === 'pair' ? (
+                        <>
+                          {/* Left pointing image */}
+                          <img
+                            src={pointingCharacterMedia.leftUrl || '/presenter-point-left.jpg'}
+                            alt="Presenter Left"
+                            className={`absolute inset-0 w-full h-full object-cover object-bottom transition-opacity duration-200 ${
+                              isRightActive ? 'opacity-0' : 'opacity-100'
+                            }`}
+                          />
+                          {/* Right pointing image */}
+                          <img
+                            src={pointingCharacterMedia.rightUrl || '/presenter-point-right.jpg'}
+                            alt="Presenter Right"
+                            className={`absolute inset-0 w-full h-full object-cover object-bottom transition-opacity duration-200 ${
+                              isRightActive ? 'opacity-100' : 'opacity-0'
+                            }`}
+                          />
+                        </>
                       ) : (
                         <img
                           src={pointingCharacterMedia.url}
@@ -2996,10 +3074,23 @@ export default function VocabVideoGenerator() {
                     </div>
                   )}
 
+                  {/* Studio Clean Mask: covers old baked-in text from reference videos if video */}
+                  {pointingCleanBackdrop && (
+                    <div
+                      className="absolute inset-x-0 top-0 z-[1] pointer-events-none transition-all duration-300"
+                      style={{
+                        height: `${pointingMaskHeight}%`,
+                        background: pointingCharacterMedia?.type === 'video'
+                          ? 'linear-gradient(180deg, #d3d6db 0%, #d3d6db 65%, #d4d7dc 82%, rgba(212,215,220,0) 100%)'
+                          : 'linear-gradient(180deg, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.1) 60%, rgba(0,0,0,0) 100%)',
+                      }}
+                    />
+                  )}
+
                   {/* Header Tag / Topic Title */}
                   {pair.topic && (
                     <div className="pt-3 px-4 flex justify-center z-10 shrink-0">
-                      <span className="px-3.5 py-1 bg-black/40 backdrop-blur-md text-white text-[11px] font-black tracking-wider rounded-full border border-white/20 shadow-lg drop-shadow-md">
+                      <span className="px-3.5 py-1 bg-black/50 backdrop-blur-md text-white text-[11px] font-black tracking-wider rounded-full border border-white/20 shadow-lg drop-shadow-md">
                         {pair.topic}
                       </span>
                     </div>
@@ -3012,47 +3103,49 @@ export default function VocabVideoGenerator() {
                   >
                     {/* Left Card */}
                     <div
-                      className={`flex flex-col items-center justify-center text-center p-3 transition-all duration-300 ${
+                      className={`flex flex-col items-center justify-between text-center p-3.5 rounded-3xl transition-all duration-300 select-none ${
                         isLeftActive
-                          ? 'bg-[#7eb3cb]/90 rounded-3xl shadow-2xl ring-2 ring-white scale-105 backdrop-blur-sm'
-                          : 'bg-transparent'
+                          ? 'bg-[#7eb3cb] text-white shadow-2xl ring-4 ring-white/90 scale-105 -translate-y-1'
+                          : 'bg-white/80 backdrop-blur-md border border-white/85 text-slate-800 shadow-lg scale-100'
                       }`}
-                      style={{ minHeight: '170px' }}
+                      style={{ minHeight: '190px' }}
                     >
                       {/* Romaji */}
                       <div
-                        className="text-[#38bdf8] font-black text-xl md:text-2xl tracking-wide uppercase select-none"
-                        style={{
-                          textShadow: '0 0 6px #ffffff, 0 2px 8px rgba(0,0,0,0.85)',
-                          WebkitTextStroke: '0.8px rgba(255,255,255,0.9)'
-                        }}
+                        className={`font-black text-lg md:text-xl tracking-wider uppercase transition-colors ${
+                          isLeftActive ? 'text-white drop-shadow' : 'text-sky-700'
+                        }`}
                       >
                         {pair.left.romaji}
                       </div>
 
                       {/* Emoji or Image */}
-                      <div className="my-1.5 flex items-center justify-center min-h-[48px]">
+                      <div className="my-1 flex items-center justify-center min-h-[50px]">
                         {pair.left.image ? (
                           <img src={pair.left.image} alt="" className="w-12 h-12 object-contain drop-shadow-md" />
                         ) : (
-                          <span className="text-4xl md:text-5xl drop-shadow-md select-none">{pair.left.emoji || '🌹'}</span>
+                          <span className="text-4xl md:text-5xl drop-shadow">{pair.left.emoji || '🌹'}</span>
                         )}
                       </div>
 
                       {/* Pitch Text / Japanese */}
                       <div className="flex items-center justify-center my-1">
                         <span
-                          className="text-white font-black text-2xl md:text-3xl tracking-wider select-none"
-                          style={{ textShadow: '0 2px 10px rgba(0,0,0,0.95), 0 0 4px rgba(0,0,0,0.8)' }}
+                          className={`font-black text-2xl md:text-3xl tracking-wide transition-colors ${
+                            isLeftActive ? 'text-white drop-shadow-md' : 'text-slate-900'
+                          }`}
                         >
                           {pair.left.pitchText || pair.left.japanese}
                         </span>
                       </div>
 
-                      {/* Meaning */}
+                      {/* Meaning Badge */}
                       <div
-                        className="text-white font-black text-sm md:text-base drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] select-none"
-                        style={{ textShadow: '0 1px 8px rgba(0,0,0,0.9)' }}
+                        className={`font-black text-xs md:text-sm px-3.5 py-1 rounded-full transition-all shadow-sm ${
+                          isLeftActive
+                            ? 'bg-white text-[#2c5f74]'
+                            : 'bg-slate-800/85 text-white'
+                        }`}
                       >
                         {pair.left.meaning}
                       </div>
@@ -3060,47 +3153,49 @@ export default function VocabVideoGenerator() {
 
                     {/* Right Card */}
                     <div
-                      className={`flex flex-col items-center justify-center text-center p-3 transition-all duration-300 ${
+                      className={`flex flex-col items-center justify-between text-center p-3.5 rounded-3xl transition-all duration-300 select-none ${
                         isRightActive
-                          ? 'bg-[#7eb3cb]/90 rounded-3xl shadow-2xl ring-2 ring-white scale-105 backdrop-blur-sm'
-                          : 'bg-transparent'
+                          ? 'bg-[#7eb3cb] text-white shadow-2xl ring-4 ring-white/90 scale-105 -translate-y-1'
+                          : 'bg-white/80 backdrop-blur-md border border-white/85 text-slate-800 shadow-lg scale-100'
                       }`}
-                      style={{ minHeight: '170px' }}
+                      style={{ minHeight: '190px' }}
                     >
                       {/* Romaji */}
                       <div
-                        className="text-[#38bdf8] font-black text-xl md:text-2xl tracking-wide uppercase select-none"
-                        style={{
-                          textShadow: '0 0 6px #ffffff, 0 2px 8px rgba(0,0,0,0.85)',
-                          WebkitTextStroke: '0.8px rgba(255,255,255,0.9)'
-                        }}
+                        className={`font-black text-lg md:text-xl tracking-wider uppercase transition-colors ${
+                          isRightActive ? 'text-white drop-shadow' : 'text-sky-700'
+                        }`}
                       >
                         {pair.right.romaji}
                       </div>
 
                       {/* Emoji or Image */}
-                      <div className="my-1.5 flex items-center justify-center min-h-[48px]">
+                      <div className="my-1 flex items-center justify-center min-h-[50px]">
                         {pair.right.image ? (
                           <img src={pair.right.image} alt="" className="w-12 h-12 object-contain drop-shadow-md" />
                         ) : (
-                          <span className="text-4xl md:text-5xl drop-shadow-md select-none">{pair.right.emoji || '👃'}</span>
+                          <span className="text-4xl md:text-5xl drop-shadow">{pair.right.emoji || '👃'}</span>
                         )}
                       </div>
 
                       {/* Pitch Text / Japanese */}
                       <div className="flex items-center justify-center my-1">
                         <span
-                          className="text-white font-black text-2xl md:text-3xl tracking-wider select-none"
-                          style={{ textShadow: '0 2px 10px rgba(0,0,0,0.95), 0 0 4px rgba(0,0,0,0.8)' }}
+                          className={`font-black text-2xl md:text-3xl tracking-wide transition-colors ${
+                            isRightActive ? 'text-white drop-shadow-md' : 'text-slate-900'
+                          }`}
                         >
                           {pair.right.pitchText || pair.right.japanese}
                         </span>
                       </div>
 
-                      {/* Meaning */}
+                      {/* Meaning Badge */}
                       <div
-                        className="text-white font-black text-sm md:text-base drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] select-none"
-                        style={{ textShadow: '0 1px 8px rgba(0,0,0,0.9)' }}
+                        className={`font-black text-xs md:text-sm px-3.5 py-1 rounded-full transition-all shadow-sm ${
+                          isRightActive
+                            ? 'bg-white text-[#2c5f74]'
+                            : 'bg-slate-800/85 text-white'
+                        }`}
                       >
                         {pair.right.meaning}
                       </div>
