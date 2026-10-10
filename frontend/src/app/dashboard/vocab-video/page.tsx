@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, Play, Video, Download, X, Settings2, Trash2 } from 'lucide-react';
+import { Upload, Play, Video, Download, X, Settings2, Trash2, Sparkles, Plus, Image as ImageIcon, Wand2 } from 'lucide-react';
 
 interface CardData {
   id: string;
@@ -37,6 +37,106 @@ interface DialogueLine {
   romaji: string;      // Romaji phiên âm
   meaning: string;     // Nghĩa tiếng Việt
 }
+
+export interface PointingWord {
+  romaji: string;
+  emoji: string;
+  image?: string;
+  japanese: string;
+  pitchText: string;
+  meaning: string;
+  speakText?: string;
+}
+
+export interface PointingPair {
+  id: string;
+  topic?: string;
+  left: PointingWord;
+  right: PointingWord;
+}
+
+const DEFAULT_POINTING_PAIRS: PointingPair[] = [
+  {
+    id: 'p1',
+    topic: 'Từ đồng âm khác nghĩa (はな)',
+    left: {
+      romaji: 'hana',
+      emoji: '🌹',
+      japanese: 'はな',
+      pitchText: 'は ⤴ な',
+      meaning: 'bông hoa',
+      speakText: 'はな'
+    },
+    right: {
+      romaji: 'hana',
+      emoji: '👃',
+      japanese: 'はな',
+      pitchText: 'は ⤵ な',
+      meaning: 'cái mũi',
+      speakText: 'はな'
+    }
+  },
+  {
+    id: 'p2',
+    topic: 'Từ đồng âm khác nghĩa (あめ)',
+    left: {
+      romaji: 'ame',
+      emoji: '🌧️',
+      japanese: 'あめ',
+      pitchText: 'あ ⤵ め',
+      meaning: 'cơn mưa',
+      speakText: 'あめ'
+    },
+    right: {
+      romaji: 'ame',
+      emoji: '🍬',
+      japanese: 'あめ',
+      pitchText: 'あ ⤴ め',
+      meaning: 'kẹo ngọt',
+      speakText: 'あめ'
+    }
+  },
+  {
+    id: 'p3',
+    topic: 'Từ đồng âm khác nghĩa (はし)',
+    left: {
+      romaji: 'hashi',
+      emoji: '🥢',
+      japanese: 'はし',
+      pitchText: 'は ⤵ し',
+      meaning: 'đôi đũa',
+      speakText: 'はし'
+    },
+    right: {
+      romaji: 'hashi',
+      emoji: '🌉',
+      japanese: 'はし',
+      pitchText: 'は ⤴ し',
+      meaning: 'cây cầu',
+      speakText: 'はし'
+    }
+  },
+  {
+    id: 'p4',
+    topic: 'Từ đồng âm khác nghĩa (かき)',
+    left: {
+      romaji: 'kaki',
+      emoji: '🦪',
+      japanese: 'かき',
+      pitchText: 'か ⤵ き',
+      meaning: 'con hàu',
+      speakText: 'かき'
+    },
+    right: {
+      romaji: 'kaki',
+      emoji: '🥭',
+      japanese: 'かき',
+      pitchText: 'か ⤴ き',
+      meaning: 'quả hồng',
+      speakText: 'かき'
+    }
+  }
+];
 
 // Initial cards mapping to the screenshot provided by user
 const INITIAL_CARDS: CardData[] = [
@@ -190,8 +290,22 @@ export default function VocabVideoGenerator() {
   const [headerTextColor, setHeaderTextColor] = useState<string>('#00E5FF');
 
   const [bgMedia, setBgMedia] = useState<{ url: string, type: 'image' | 'video' } | null>(null);
-  const [displayMode, setDisplayMode] = useState<'vocab' | 'sentence' | 'story' | 'quiz' | 'grammar' | 'dialogue'>('vocab');
+  const [displayMode, setDisplayMode] = useState<'vocab' | 'sentence' | 'story' | 'quiz' | 'grammar' | 'dialogue' | 'pointing'>('vocab');
   const [topicTitle, setTopicTitle] = useState<string>('THỜI GIAN');
+
+  // Pointing / Pitch Accent State (Chỉ tay so sánh từ vựng)
+  const [pointingPairs, setPointingPairs] = useState<PointingPair[]>(DEFAULT_POINTING_PAIRS);
+  const [pointingCurrentPairIdx, setPointingCurrentPairIdx] = useState<number>(0);
+  const [pointingCharacterMedia, setPointingCharacterMedia] = useState<{ url: string; type: 'image' | 'video' } | null>({
+    url: '/pointing-girl.png',
+    type: 'image'
+  });
+  const [pointingCardTopOffset, setPointingCardTopOffset] = useState<number>(90);
+  const [showAiPairsModal, setShowAiPairsModal] = useState<boolean>(false);
+  const [aiPairsTopic, setAiPairsTopic] = useState<string>('Từ đồng âm tiếng Nhật N5 (Pitch Accent)');
+  const [isGeneratingAiPairs, setIsGeneratingAiPairs] = useState<boolean>(false);
+  const pointingPairsRef = useRef<PointingPair[]>(pointingPairs);
+  pointingPairsRef.current = pointingPairs;
 
   // Dialogue State
   const [dialogueLines, setDialogueLines] = useState<DialogueLine[]>(DEFAULT_10_DIALOGUE_LINES);
@@ -735,7 +849,158 @@ export default function VocabVideoGenerator() {
     }
   };
 
- const setupCanvasCrop = (originalStream: MediaStream): MediaStream => {
+  // Kịch bản phát tự động cho chế độ Chỉ Tay So Sánh Từ (Pitch Accent)
+  const playPointingSequence = async () => {
+    if (bgmUrl && audioRef.current) {
+      audioRef.current.volume = bgmVolume;
+      audioRef.current.currentTime = 0;
+      audioRef.current.play().catch(e => console.log('BGM play blocked:', e));
+    }
+
+    const pairs = pointingPairsRef.current;
+    for (let i = 0; i < pairs.length; i++) {
+      const pair = pairs[i];
+      setPointingCurrentPairIdx(i);
+      setActiveHighlight(null);
+
+      // Chờ 800ms để người xem nhìn rõ cặp từ xuất hiện trên đầu ngón tay
+      await new Promise(res => setTimeout(res, 800));
+
+      // 1. Đọc và Highlight từ BÊN TRÁI
+      setActiveHighlight(`${pair.id}_left`);
+      const leftText = pair.left.speakText || pair.left.japanese || pair.left.romaji;
+      if (leftText) {
+        await speakText(leftText, false, { voiceURI: teacherVoiceURI, pitchVal: 1.05 });
+        await new Promise(res => setTimeout(res, 500));
+      }
+
+      // Tắt highlight trái
+      setActiveHighlight(null);
+      await new Promise(res => setTimeout(res, 350));
+
+      // 2. Đọc và Highlight từ BÊN PHẢI
+      setActiveHighlight(`${pair.id}_right`);
+      const rightText = pair.right.speakText || pair.right.japanese || pair.right.romaji;
+      if (rightText) {
+        const rightPitch = pair.right.pitchText?.includes('⤵') ? 0.9 : 1.15;
+        await speakText(rightText, false, { voiceURI: teacherVoiceURI, pitchVal: rightPitch });
+        await new Promise(res => setTimeout(res, 500));
+      }
+
+      // Tắt highlight phải
+      setActiveHighlight(null);
+
+      // Nghỉ chuyển cảnh
+      if (i < pairs.length - 1) {
+        await new Promise(res => setTimeout(res, 1200));
+      } else {
+        await new Promise(res => setTimeout(res, 1500));
+      }
+    }
+
+    setActiveHighlight(null);
+    if (audioRef.current) {
+      audioRef.current.pause();
+    }
+  };
+
+  const addPointingPair = () => {
+    const newId = 'p_' + Date.now();
+    const newPair: PointingPair = {
+      id: newId,
+      topic: 'Cặp từ #' + (pointingPairs.length + 1),
+      left: {
+        romaji: 'neko',
+        emoji: '🐱',
+        japanese: 'ねこ',
+        pitchText: 'ね ⤴ こ',
+        meaning: 'con mèo',
+        speakText: 'ねこ'
+      },
+      right: {
+        romaji: 'inu',
+        emoji: '🐶',
+        japanese: 'いぬ',
+        pitchText: 'い ⤵ ぬ',
+        meaning: 'con chó',
+        speakText: 'いぬ'
+      }
+    };
+    setPointingPairs(prev => [...prev, newPair]);
+    setPointingCurrentPairIdx(pointingPairs.length);
+  };
+
+  const removePointingPair = (index: number) => {
+    if (pointingPairs.length <= 1) {
+      alert('Cần giữ lại ít nhất 1 cặp từ!');
+      return;
+    }
+    setPointingPairs(prev => prev.filter((_, idx) => idx !== index));
+    if (pointingCurrentPairIdx >= pointingPairs.length - 1) {
+      setPointingCurrentPairIdx(Math.max(0, pointingPairs.length - 2));
+    }
+  };
+
+  const updatePointingWord = (
+    pairIndex: number, 
+    side: 'left' | 'right', 
+    field: keyof PointingWord, 
+    value: string
+  ) => {
+    setPointingPairs(prev => {
+      const next = [...prev];
+      if (next[pairIndex]) {
+        next[pairIndex] = {
+          ...next[pairIndex],
+          [side]: {
+            ...next[pairIndex][side],
+            [field]: value
+          }
+        };
+      }
+      return next;
+    });
+  };
+
+  const handleGenerateAiPairs = async () => {
+    setIsGeneratingAiPairs(true);
+    try {
+      const { db } = await import('@/lib/firebase');
+      const { doc, getDoc } = await import('firebase/firestore');
+      const docSnap = await getDoc(doc(db, 'settings', 'ai_config'));
+      let clientGeminiKey = '';
+      if (docSnap.exists()) {
+        clientGeminiKey = docSnap.data().gemini_api_key || '';
+      }
+
+      const res = await fetch('/api/ai/generate-pointing-pairs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topic: aiPairsTopic || 'Từ đồng âm tiếng Nhật N5 (Pitch Accent)',
+          count: 4,
+          clientGeminiKey
+        })
+      });
+
+      const data = await res.json();
+      if (data.success && Array.isArray(data.pairs) && data.pairs.length > 0) {
+        setPointingPairs(data.pairs);
+        setPointingCurrentPairIdx(0);
+        setShowAiPairsModal(false);
+        alert(`Đã tạo thành công ${data.pairs.length} cặp từ bằng AI!`);
+      } else {
+        alert('Lỗi tạo cặp từ: ' + (data.error || 'Vui lòng thử lại.'));
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert('Đã xảy ra lỗi: ' + err.message);
+    } finally {
+      setIsGeneratingAiPairs(false);
+    }
+  };
+
+  const setupCanvasCrop = (originalStream: MediaStream): MediaStream => {
     const hiddenVideo = document.createElement('video');
     hiddenVideo.srcObject = originalStream;
     hiddenVideo.muted = true;
@@ -848,6 +1113,8 @@ export default function VocabVideoGenerator() {
           await playGrammarSequence();
         } else if (displayMode === 'dialogue') {
           await playDialogueSequence();
+        } else if (displayMode === 'pointing') {
+          await playPointingSequence();
         } else {
           await playSequence();
         }
@@ -890,7 +1157,13 @@ export default function VocabVideoGenerator() {
         </div>
         <div className="flex gap-3">
           <button 
-            onClick={displayMode === 'quiz' ? playQuizSequence : displayMode === 'grammar' ? playGrammarSequence : displayMode === 'dialogue' ? playDialogueSequence : playSequence}
+            onClick={
+              displayMode === 'quiz' ? playQuizSequence : 
+              displayMode === 'grammar' ? playGrammarSequence : 
+              displayMode === 'dialogue' ? playDialogueSequence : 
+              displayMode === 'pointing' ? playPointingSequence : 
+              playSequence
+            }
             disabled={isRecording}
             className="btn btn-outline flex items-center gap-2 px-4 py-2"
           >
@@ -967,9 +1240,15 @@ export default function VocabVideoGenerator() {
             >
               💬 Hội Thoại
             </button>
+            <button 
+              onClick={() => setDisplayMode('pointing')} 
+              className={`whitespace-nowrap flex-1 py-2 px-3 rounded-lg font-bold text-sm transition-all ${displayMode === 'pointing' ? 'bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 text-white shadow-sm' : 'text-[var(--text-secondary)] hover:text-gray-900'}`}
+            >
+              👆 Chỉ Tay So Sánh
+            </button>
           </div>
 
-          {displayMode !== 'grammar' && displayMode !== 'dialogue' && (
+          {displayMode !== 'grammar' && displayMode !== 'dialogue' && displayMode !== 'pointing' && (
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-1 bg-[var(--bg-hover)] p-1.5 rounded-lg border border-[var(--border)] w-full overflow-x-auto">
                 <span className="text-sm font-medium px-2 shrink-0">Số lượng:</span>
@@ -1697,6 +1976,341 @@ export default function VocabVideoGenerator() {
                 ))}
               </div>
             )}
+
+            {/* Pointing / Pitch Accent Mode Editor */}
+            {displayMode === 'pointing' && (
+              <div className="space-y-5">
+                {/* 1. Header & AI Generator Banner */}
+                <div className="p-4 bg-gradient-to-r from-emerald-50 via-teal-50 to-cyan-50 rounded-2xl border border-teal-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-extrabold text-sm text-teal-900 flex items-center gap-1.5">
+                        <span>👆</span> Phân Biệt Từ (Chỉ Tay / Pitch Accent)
+                      </h3>
+                      <p className="text-[11px] text-teal-700 font-medium">
+                        So sánh 2 từ vựng trên 2 ngón tay chỉ lên của nhân vật (video TikTok viral)
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowAiPairsModal(true)}
+                      className="px-3 py-1.5 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white font-bold text-xs rounded-xl shadow-md shadow-teal-500/20 flex items-center gap-1.5 transition-all"
+                    >
+                      <Sparkles size={14} /> AI Tạo Cặp Từ
+                    </button>
+                  </div>
+
+                  {/* Character / Presenter media config */}
+                  <div className="pt-2 border-t border-teal-200/70 space-y-2">
+                    <label className="block text-[11px] font-bold text-teal-800">
+                      👤 Nhân vật người chỉ tay (Ảnh hoặc Video):
+                    </label>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => setPointingCharacterMedia({ url: '/pointing-girl.png', type: 'image' })}
+                        className={`text-xs px-2.5 py-1.5 rounded-lg border font-bold transition-all ${
+                          pointingCharacterMedia?.url === '/pointing-girl.png'
+                            ? 'bg-teal-600 text-white border-teal-600'
+                            : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        👩 Học sinh chỉ tay (Mẫu)
+                      </button>
+
+                      <label className="cursor-pointer text-xs px-2.5 py-1.5 rounded-lg border border-dashed border-teal-400 bg-white hover:bg-teal-50 text-teal-700 font-bold flex items-center gap-1">
+                        <Upload size={12} /> Tải Video/Ảnh của bạn
+                        <input
+                          type="file"
+                          accept="image/*,video/mp4,video/webm"
+                          className="hidden"
+                          onChange={e => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              const isVid = file.type.startsWith('video');
+                              const url = URL.createObjectURL(file);
+                              setPointingCharacterMedia({ url, type: isVid ? 'video' : 'image' });
+                            }
+                          }}
+                        />
+                      </label>
+
+                      {pointingCharacterMedia && (
+                        <button
+                          type="button"
+                          onClick={() => setPointingCharacterMedia(null)}
+                          className="text-xs px-2 py-1.5 text-red-600 hover:bg-red-50 rounded-lg font-bold"
+                          title="Gỡ nhân vật"
+                        >
+                          ✕ Gỡ
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Slider for Card Vertical Position */}
+                    <div className="flex items-center gap-3 pt-1">
+                      <span className="text-[11px] font-bold text-teal-800 shrink-0">
+                        📏 Vị trí thẻ (khớp đầu ngón tay):
+                      </span>
+                      <input
+                        type="range"
+                        min="30"
+                        max="220"
+                        value={pointingCardTopOffset}
+                        onChange={e => setPointingCardTopOffset(Number(e.target.value))}
+                        className="w-full accent-teal-600 cursor-pointer"
+                      />
+                      <span className="text-xs font-black text-teal-800 shrink-0 w-8">
+                        {pointingCardTopOffset}px
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Pair Navigation Tabs */}
+                <div className="flex items-center justify-between gap-2 overflow-x-auto pb-1">
+                  <div className="flex items-center gap-1.5 overflow-x-auto">
+                    {pointingPairs.map((pair, idx) => (
+                      <button
+                        key={pair.id}
+                        type="button"
+                        onClick={() => setPointingCurrentPairIdx(idx)}
+                        className={`px-3 py-1.5 rounded-xl font-extrabold text-xs shrink-0 transition-all ${
+                          pointingCurrentPairIdx === idx
+                            ? 'bg-teal-600 text-white shadow-md'
+                            : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-100'
+                        }`}
+                      >
+                        Cặp #{idx + 1}: {pair.left.romaji || pair.left.japanese}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={addPointingPair}
+                      className="px-2.5 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-bold text-xs rounded-xl flex items-center gap-1 transition-all"
+                      title="Thêm cặp từ mới"
+                    >
+                      <Plus size={14} /> Thêm cặp
+                    </button>
+                    {pointingPairs.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removePointingPair(pointingCurrentPairIdx)}
+                        className="p-1.5 text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                        title="Xóa cặp hiện tại"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* 3. Current Pair Editor (Side-by-Side: Left word & Right word) */}
+                {pointingPairs[pointingCurrentPairIdx] && (() => {
+                  const curr = pointingPairs[pointingCurrentPairIdx];
+                  const idx = pointingCurrentPairIdx;
+                  return (
+                    <div className="space-y-4">
+                      {/* Topic Title for this pair */}
+                      <div className="p-3 bg-white rounded-xl border border-gray-200 flex items-center gap-2">
+                        <span className="text-xs font-bold text-gray-500 shrink-0">Chủ đề/Tiêu đề nhỏ:</span>
+                        <input
+                          type="text"
+                          className="input input-sm w-full font-bold text-xs text-gray-800"
+                          value={curr.topic || ''}
+                          onChange={e => {
+                            const val = e.target.value;
+                            setPointingPairs(prev => prev.map((p, i) => i === idx ? { ...p, topic: val } : p));
+                          }}
+                          placeholder="Ví dụ: Từ đồng âm khác nghĩa (はな)"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* LEFT WORD */}
+                        <div className="p-3.5 bg-blue-50/70 rounded-2xl border-2 border-blue-200 space-y-2.5">
+                          <div className="flex items-center justify-between pb-1 border-b border-blue-200">
+                            <span className="text-xs font-black text-blue-900 flex items-center gap-1">
+                              👈 TỪ BÊN TRÁI (Thẻ 1)
+                            </span>
+                            <span className="text-[10px] bg-blue-200/80 text-blue-800 px-2 py-0.5 rounded-full font-bold">
+                              Đọc trước
+                            </span>
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-bold text-blue-800 mb-0.5">Romaji:</label>
+                            <input
+                              type="text"
+                              className="input input-sm w-full font-bold text-sm text-blue-900 bg-white"
+                              value={curr.left.romaji}
+                              onChange={e => updatePointingWord(idx, 'left', 'romaji', e.target.value)}
+                              placeholder="hana"
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-[80px_1fr] gap-2">
+                            <div>
+                              <label className="block text-[11px] font-bold text-blue-800 mb-0.5">Emoji / Icon:</label>
+                              <input
+                                type="text"
+                                className="input input-sm w-full text-center text-lg bg-white"
+                                value={curr.left.emoji}
+                                onChange={e => updatePointingWord(idx, 'left', 'emoji', e.target.value)}
+                                placeholder="🌹"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] font-bold text-blue-800 mb-0.5">Tiếng Nhật:</label>
+                              <input
+                                type="text"
+                                className="input input-sm w-full font-bold text-sm bg-white"
+                                value={curr.left.japanese}
+                                onChange={e => updatePointingWord(idx, 'left', 'japanese', e.target.value)}
+                                placeholder="はな"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="flex items-center justify-between mb-0.5">
+                              <label className="text-[11px] font-bold text-blue-800">Cao độ (Pitch Accent):</label>
+                              <div className="flex gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => updatePointingWord(idx, 'left', 'pitchText', `${curr.left.japanese?.charAt(0) || 'は'} ⤴ ${curr.left.japanese?.slice(1) || 'な'}`)}
+                                  className="text-[10px] px-1.5 py-0.5 bg-pink-100 hover:bg-pink-200 text-pink-700 rounded font-bold"
+                                  title="Thấp lên Cao"
+                                >
+                                  ⤴ Thấp-Cao
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => updatePointingWord(idx, 'left', 'pitchText', `${curr.left.japanese?.charAt(0) || 'は'} ⤵ ${curr.left.japanese?.slice(1) || 'な'}`)}
+                                  className="text-[10px] px-1.5 py-0.5 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded font-bold"
+                                  title="Cao xuống Thấp"
+                                >
+                                  ⤵ Cao-Thấp
+                                </button>
+                              </div>
+                            </div>
+                            <input
+                              type="text"
+                              className="input input-sm w-full font-black text-sm text-pink-600 bg-white tracking-wider"
+                              value={curr.left.pitchText}
+                              onChange={e => updatePointingWord(idx, 'left', 'pitchText', e.target.value)}
+                              placeholder="は ⤴ な"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-bold text-blue-800 mb-0.5">Nghĩa tiếng Việt:</label>
+                            <input
+                              type="text"
+                              className="input input-sm w-full font-bold text-xs bg-white text-gray-800"
+                              value={curr.left.meaning}
+                              onChange={e => updatePointingWord(idx, 'left', 'meaning', e.target.value)}
+                              placeholder="bông hoa"
+                            />
+                          </div>
+                        </div>
+
+                        {/* RIGHT WORD */}
+                        <div className="p-3.5 bg-amber-50/70 rounded-2xl border-2 border-amber-200 space-y-2.5">
+                          <div className="flex items-center justify-between pb-1 border-b border-amber-200">
+                            <span className="text-xs font-black text-amber-900 flex items-center gap-1">
+                              👉 TỪ BÊN PHẢI (Thẻ 2)
+                            </span>
+                            <span className="text-[10px] bg-amber-200/80 text-amber-800 px-2 py-0.5 rounded-full font-bold">
+                              Đọc sau
+                            </span>
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-bold text-amber-800 mb-0.5">Romaji:</label>
+                            <input
+                              type="text"
+                              className="input input-sm w-full font-bold text-sm text-amber-900 bg-white"
+                              value={curr.right.romaji}
+                              onChange={e => updatePointingWord(idx, 'right', 'romaji', e.target.value)}
+                              placeholder="hana"
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-[80px_1fr] gap-2">
+                            <div>
+                              <label className="block text-[11px] font-bold text-amber-800 mb-0.5">Emoji / Icon:</label>
+                              <input
+                                type="text"
+                                className="input input-sm w-full text-center text-lg bg-white"
+                                value={curr.right.emoji}
+                                onChange={e => updatePointingWord(idx, 'right', 'emoji', e.target.value)}
+                                placeholder="👃"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] font-bold text-amber-800 mb-0.5">Tiếng Nhật:</label>
+                              <input
+                                type="text"
+                                className="input input-sm w-full font-bold text-sm bg-white"
+                                value={curr.right.japanese}
+                                onChange={e => updatePointingWord(idx, 'right', 'japanese', e.target.value)}
+                                placeholder="はな"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="flex items-center justify-between mb-0.5">
+                              <label className="text-[11px] font-bold text-amber-800">Cao độ (Pitch Accent):</label>
+                              <div className="flex gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => updatePointingWord(idx, 'right', 'pitchText', `${curr.right.japanese?.charAt(0) || 'は'} ⤴ ${curr.right.japanese?.slice(1) || 'な'}`)}
+                                  className="text-[10px] px-1.5 py-0.5 bg-pink-100 hover:bg-pink-200 text-pink-700 rounded font-bold"
+                                  title="Thấp lên Cao"
+                                >
+                                  ⤴ Thấp-Cao
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => updatePointingWord(idx, 'right', 'pitchText', `${curr.right.japanese?.charAt(0) || 'は'} ⤵ ${curr.right.japanese?.slice(1) || 'な'}`)}
+                                  className="text-[10px] px-1.5 py-0.5 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded font-bold"
+                                  title="Cao xuống Thấp"
+                                >
+                                  ⤵ Cao-Thấp
+                                </button>
+                              </div>
+                            </div>
+                            <input
+                              type="text"
+                              className="input input-sm w-full font-black text-sm text-pink-600 bg-white tracking-wider"
+                              value={curr.right.pitchText}
+                              onChange={e => updatePointingWord(idx, 'right', 'pitchText', e.target.value)}
+                              placeholder="は ⤵ な"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-bold text-amber-800 mb-0.5">Nghĩa tiếng Việt:</label>
+                            <input
+                              type="text"
+                              className="input input-sm w-full font-bold text-xs bg-white text-gray-800"
+                              value={curr.right.meaning}
+                              onChange={e => updatePointingWord(idx, 'right', 'meaning', e.target.value)}
+                              placeholder="cái mũi"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
           </div>
         </div>
 
@@ -2350,6 +2964,182 @@ export default function VocabVideoGenerator() {
               </div>
             )}
 
+            {/* Pointing / Pitch Accent Mode (CHỈ TAY SO SÁNH TỪ) */}
+            {displayMode === 'pointing' && pointingPairs[pointingCurrentPairIdx] && (() => {
+              const pair = pointingPairs[pointingCurrentPairIdx];
+              const isLeftActive = activeHighlight === `${pair.id}_left`;
+              const isRightActive = activeHighlight === `${pair.id}_right`;
+
+              return (
+                <div className="flex-1 w-full flex flex-col z-10 relative overflow-hidden h-full">
+                  {/* Background Presenter Media (Image / Video of student pointing) */}
+                  {pointingCharacterMedia && (
+                    <div className="absolute inset-0 z-0 flex items-end justify-center pointer-events-none select-none overflow-hidden">
+                      {pointingCharacterMedia.type === 'video' ? (
+                        <video
+                          src={pointingCharacterMedia.url}
+                          autoPlay
+                          loop
+                          muted
+                          playsInline
+                          className="w-full h-full object-cover object-bottom"
+                        />
+                      ) : (
+                        <img
+                          src={pointingCharacterMedia.url}
+                          alt="Presenter"
+                          className="w-full h-full object-cover object-bottom"
+                        />
+                      )}
+                    </div>
+                  )}
+
+                  {/* Header Tag / Topic Title */}
+                  {pair.topic && (
+                    <div className="pt-3 px-4 flex justify-center z-10 shrink-0">
+                      <span className="px-3.5 py-1 bg-black/40 backdrop-blur-md text-white text-[11px] font-black tracking-wider rounded-full border border-white/20 shadow-lg drop-shadow-md">
+                        {pair.topic}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* The Two Comparison Words positioned above the pointing index fingers */}
+                  <div
+                    className="w-full px-4 grid grid-cols-2 gap-3.5 z-20 relative transition-all duration-300"
+                    style={{ marginTop: `${pointingCardTopOffset}px` }}
+                  >
+                    {/* Left Card */}
+                    <div
+                      className={`flex flex-col items-center justify-center text-center p-3 transition-all duration-300 ${
+                        isLeftActive
+                          ? 'bg-[#7eb3cb]/90 rounded-3xl shadow-2xl ring-2 ring-white scale-105 backdrop-blur-sm'
+                          : 'bg-transparent'
+                      }`}
+                      style={{ minHeight: '170px' }}
+                    >
+                      {/* Romaji */}
+                      <div
+                        className="text-[#38bdf8] font-black text-xl md:text-2xl tracking-wide uppercase select-none"
+                        style={{
+                          textShadow: '0 0 6px #ffffff, 0 2px 8px rgba(0,0,0,0.85)',
+                          WebkitTextStroke: '0.8px rgba(255,255,255,0.9)'
+                        }}
+                      >
+                        {pair.left.romaji}
+                      </div>
+
+                      {/* Emoji or Image */}
+                      <div className="my-1.5 flex items-center justify-center min-h-[48px]">
+                        {pair.left.image ? (
+                          <img src={pair.left.image} alt="" className="w-12 h-12 object-contain drop-shadow-md" />
+                        ) : (
+                          <span className="text-4xl md:text-5xl drop-shadow-md select-none">{pair.left.emoji || '🌹'}</span>
+                        )}
+                      </div>
+
+                      {/* Pitch Text / Japanese */}
+                      <div className="flex items-center justify-center my-1">
+                        <span
+                          className="text-white font-black text-2xl md:text-3xl tracking-wider select-none"
+                          style={{ textShadow: '0 2px 10px rgba(0,0,0,0.95), 0 0 4px rgba(0,0,0,0.8)' }}
+                        >
+                          {pair.left.pitchText || pair.left.japanese}
+                        </span>
+                      </div>
+
+                      {/* Meaning */}
+                      <div
+                        className="text-white font-black text-sm md:text-base drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] select-none"
+                        style={{ textShadow: '0 1px 8px rgba(0,0,0,0.9)' }}
+                      >
+                        {pair.left.meaning}
+                      </div>
+                    </div>
+
+                    {/* Right Card */}
+                    <div
+                      className={`flex flex-col items-center justify-center text-center p-3 transition-all duration-300 ${
+                        isRightActive
+                          ? 'bg-[#7eb3cb]/90 rounded-3xl shadow-2xl ring-2 ring-white scale-105 backdrop-blur-sm'
+                          : 'bg-transparent'
+                      }`}
+                      style={{ minHeight: '170px' }}
+                    >
+                      {/* Romaji */}
+                      <div
+                        className="text-[#38bdf8] font-black text-xl md:text-2xl tracking-wide uppercase select-none"
+                        style={{
+                          textShadow: '0 0 6px #ffffff, 0 2px 8px rgba(0,0,0,0.85)',
+                          WebkitTextStroke: '0.8px rgba(255,255,255,0.9)'
+                        }}
+                      >
+                        {pair.right.romaji}
+                      </div>
+
+                      {/* Emoji or Image */}
+                      <div className="my-1.5 flex items-center justify-center min-h-[48px]">
+                        {pair.right.image ? (
+                          <img src={pair.right.image} alt="" className="w-12 h-12 object-contain drop-shadow-md" />
+                        ) : (
+                          <span className="text-4xl md:text-5xl drop-shadow-md select-none">{pair.right.emoji || '👃'}</span>
+                        )}
+                      </div>
+
+                      {/* Pitch Text / Japanese */}
+                      <div className="flex items-center justify-center my-1">
+                        <span
+                          className="text-white font-black text-2xl md:text-3xl tracking-wider select-none"
+                          style={{ textShadow: '0 2px 10px rgba(0,0,0,0.95), 0 0 4px rgba(0,0,0,0.8)' }}
+                        >
+                          {pair.right.pitchText || pair.right.japanese}
+                        </span>
+                      </div>
+
+                      {/* Meaning */}
+                      <div
+                        className="text-white font-black text-sm md:text-base drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] select-none"
+                        style={{ textShadow: '0 1px 8px rgba(0,0,0,0.9)' }}
+                      >
+                        {pair.right.meaning}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Bottom Navigation / Indicator (hidden during recording) */}
+                  {!isRecording && pointingPairs.length > 1 && (
+                    <div className="mt-auto pb-4 w-full flex items-center justify-between px-6 z-20">
+                      <button
+                        type="button"
+                        onClick={() => setPointingCurrentPairIdx(p => Math.max(0, p - 1))}
+                        disabled={pointingCurrentPairIdx === 0}
+                        className="w-7 h-7 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center disabled:opacity-20 font-bold text-xs"
+                      >
+                        ‹
+                      </button>
+                      <div className="flex gap-1.5 items-center">
+                        {pointingPairs.map((_, i) => (
+                          <span
+                            key={i}
+                            className={`rounded-full transition-all ${
+                              i === pointingCurrentPairIdx ? 'w-4 h-1.5 bg-white' : 'w-1.5 h-1.5 bg-white/40'
+                            }`}
+                          />
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setPointingCurrentPairIdx(p => Math.min(pointingPairs.length - 1, p + 1))}
+                        disabled={pointingCurrentPairIdx >= pointingPairs.length - 1}
+                        className="w-7 h-7 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center disabled:opacity-20 font-bold text-xs"
+                      >
+                        ›
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
           </div>
         </div>
       </div>
@@ -2418,6 +3208,80 @@ export default function VocabVideoGenerator() {
           </div>
         </div>
       )}
+
+      {/* AI Pointing Pairs Generator Modal */}
+      {showAiPairsModal && (
+        <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl animate-in zoom-in-95 border border-gray-100 space-y-4">
+            <div className="flex items-center justify-between border-b pb-3">
+              <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <Sparkles className="text-teal-600" size={20} /> AI Tạo Cặp Từ So Sánh (Chỉ tay)
+              </h3>
+              <button 
+                onClick={() => setShowAiPairsModal(false)}
+                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p className="text-xs text-gray-600 leading-relaxed">
+              Nhập chủ đề bạn muốn dạy, AI Gemini sẽ tự động tạo trọn bộ các cặp từ đồng âm hoặc phân biệt phát âm (gồm Romaji, Emoji minh họa, Pitch Accent mũi tên và Nghĩa tiếng Việt).
+            </p>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-1">Chủ đề cần tạo:</label>
+              <input
+                type="text"
+                className="input w-full text-sm font-semibold text-gray-900 bg-gray-50 border-gray-300 focus:bg-white"
+                value={aiPairsTopic}
+                onChange={e => setAiPairsTopic(e.target.value)}
+                placeholder="VD: Từ đồng âm tiếng Nhật N5 (Pitch Accent)"
+              />
+            </div>
+
+            {/* Quick topics */}
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                'Từ đồng âm tiếng Nhật N5',
+                'Pitch Accent tiếng Nhật N4',
+                'Cặp từ đối lập tiếng Nhật',
+                'Từ vựng tiếng Hàn đồng âm'
+              ].map(t => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setAiPairsTopic(t)}
+                  className="text-[11px] px-2.5 py-1 bg-gray-100 hover:bg-teal-50 hover:text-teal-700 rounded-lg font-medium text-gray-700 transition-colors"
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t">
+              <button
+                type="button"
+                onClick={() => setShowAiPairsModal(false)}
+                className="px-4 py-2 text-xs font-bold text-gray-600 hover:bg-gray-100 rounded-xl"
+                disabled={isGeneratingAiPairs}
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={handleGenerateAiPairs}
+                disabled={isGeneratingAiPairs || !aiPairsTopic.trim()}
+                className="px-5 py-2 text-xs font-bold bg-teal-600 hover:bg-teal-700 text-white rounded-xl shadow-md shadow-teal-600/30 flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {isGeneratingAiPairs ? <span className="spinner w-3.5 h-3.5" /> : <Wand2 size={14} />}
+                {isGeneratingAiPairs ? 'Đang tạo bằng AI...' : 'Tạo 4 cặp từ ngay'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {bgmUrl && <audio ref={audioRef} src={bgmUrl} loop />}
     </div>
   );
