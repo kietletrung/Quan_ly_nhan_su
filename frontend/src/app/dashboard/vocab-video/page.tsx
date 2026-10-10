@@ -97,7 +97,7 @@ const DEFAULT_POINTING_PAIRS: PointingPair[] = [
     }
   },
   {
-    id: 'p2',
+    id: 'p3',
     topic: 'Từ đồng âm khác nghĩa (あめ)',
     left: {
       romaji: 'ame',
@@ -117,7 +117,7 @@ const DEFAULT_POINTING_PAIRS: PointingPair[] = [
     }
   },
   {
-    id: 'p3',
+    id: 'p4',
     topic: 'Từ đồng âm khác nghĩa (はし)',
     left: {
       romaji: 'hashi',
@@ -137,7 +137,7 @@ const DEFAULT_POINTING_PAIRS: PointingPair[] = [
     }
   },
   {
-    id: 'p4',
+    id: 'p5',
     topic: 'Từ đồng âm khác nghĩa (かき)',
     left: {
       romaji: 'kaki',
@@ -333,6 +333,8 @@ export default function VocabVideoGenerator() {
   const [isGeneratingAiPairs, setIsGeneratingAiPairs] = useState<boolean>(false);
   const pointingPairsRef = useRef<PointingPair[]>(pointingPairs);
   pointingPairsRef.current = pointingPairs;
+  const [isPointingPlaying, setIsPointingPlaying] = useState<boolean>(false);
+  const pointingVideoRef = useRef<HTMLVideoElement | null>(null);
 
   // Dialogue State
   const [dialogueLines, setDialogueLines] = useState<DialogueLine[]>(DEFAULT_10_DIALOGUE_LINES);
@@ -878,54 +880,122 @@ export default function VocabVideoGenerator() {
 
   // Kịch bản phát tự động cho chế độ Chỉ Tay So Sánh Từ (Pitch Accent)
   const playPointingSequence = async () => {
+    setIsPointingPlaying(true);
     if (bgmUrl && audioRef.current) {
-      audioRef.current.volume = bgmVolume;
+      audioRef.current.volume = bgmVolume * 0.3;
       audioRef.current.currentTime = 0;
       audioRef.current.play().catch(e => console.log('BGM play blocked:', e));
     }
 
-    const pairs = pointingPairsRef.current;
-    for (let i = 0; i < pairs.length; i++) {
-      const pair = pairs[i];
-      setPointingCurrentPairIdx(i);
-      setActiveHighlight(null);
+    const videoEl = pointingVideoRef.current;
+    const isTeacherBlueVideo = pointingCharacterMedia?.type === 'video' && 
+      (pointingCharacterMedia.url.includes('teacher-blue') || pointingCharacterMedia.url.includes('gemini_generated'));
 
-      // Chờ 800ms để người xem nhìn rõ cặp từ xuất hiện trên đầu ngón tay
-      await new Promise(res => setTimeout(res, 800));
-
-      // 1. Đọc và Highlight từ BÊN TRÁI
-      setActiveHighlight(`${pair.id}_left`);
-      const leftText = pair.left.speakText || pair.left.japanese || pair.left.romaji;
-      if (leftText) {
-        await speakText(leftText, false, { voiceURI: teacherVoiceURI, pitchVal: 1.05 });
-        await new Promise(res => setTimeout(res, 500));
+    if (videoEl && isTeacherBlueVideo) {
+      // 1. ĐỒNG BỘ 100% THEO CỬ CHỈ NGÓN TAY CỦA GIÁO VIÊN VÀ TIẾNG NÓI
+      videoEl.currentTime = 0;
+      videoEl.muted = false;
+      try {
+        await videoEl.play();
+      } catch (err) {
+        console.warn('Video play with sound blocked:', err);
       }
 
-      // Tắt highlight trái
-      setActiveHighlight(null);
-      await new Promise(res => setTimeout(res, 350));
+      await new Promise<void>((resolve) => {
+        let animId: number;
+        const checkSync = () => {
+          if (!videoEl || (videoEl.paused && videoEl.currentTime > 8.0) || videoEl.ended) {
+            cancelAnimationFrame(animId);
+            resolve();
+            return;
+          }
 
-      // 2. Đọc và Highlight từ BÊN PHẢI
-      setActiveHighlight(`${pair.id}_right`);
-      const rightText = pair.right.speakText || pair.right.japanese || pair.right.romaji;
-      if (rightText) {
-        const rightPitch = pair.right.pitchText?.includes('⤵') ? 0.9 : 1.15;
-        await speakText(rightText, false, { voiceURI: teacherVoiceURI, pitchVal: rightPitch });
-        await new Promise(res => setTimeout(res, 500));
-      }
+          const t = videoEl.currentTime;
 
-      // Tắt highlight phải
-      setActiveHighlight(null);
+          // TIMELINE ĐỒNG BỘ CỬ CHỈ NGÓN TAY & BẬT SÁNG THẺ TỪ:
+          // 0.00s - 1.25s: Giáo viên đứng giữa chào "Chào mừng các em!" -> Chưa highlight
+          // 1.25s - 3.00s: Giáo viên đưa tay CHỈ TRÁI -> Đọc "Shio: muối" -> Highlight Thẻ Trái Cặp 1
+          // 3.00s - 4.75s: Giáo viên đưa tay CHỈ PHẢI -> Đọc "Shio: thủy triều" -> Highlight Thẻ Phải Cặp 1
+          // 4.75s - 6.50s: Chuyển Cặp 2, Giáo viên đưa tay CHỈ TRÁI -> Đọc "Sake: rượu" -> Highlight Thẻ Trái Cặp 2
+          // 6.50s - 8.25s: Giáo viên đưa tay CHỈ PHẢI -> Đọc "Sake: cá hồi" -> Highlight Thẻ Phải Cặp 2
+          // 8.25s - 9.75s: Giáo viên hạ tay chắp lại vẫy chào "Hẹn gặp lại!" -> Tắt highlight
 
-      // Nghỉ chuyển cảnh
-      if (i < pairs.length - 1) {
-        await new Promise(res => setTimeout(res, 1200));
-      } else {
-        await new Promise(res => setTimeout(res, 1500));
+          if (t < 1.25) {
+            setPointingCurrentPairIdx(0);
+            setActiveHighlight(null);
+          } else if (t < 3.00) {
+            setPointingCurrentPairIdx(0);
+            setActiveHighlight(`${pointingPairsRef.current[0]?.id || 'p1'}_left`);
+          } else if (t < 4.75) {
+            setPointingCurrentPairIdx(0);
+            setActiveHighlight(`${pointingPairsRef.current[0]?.id || 'p1'}_right`);
+          } else if (t < 6.50) {
+            if (pointingPairsRef.current.length > 1) {
+              setPointingCurrentPairIdx(1);
+              setActiveHighlight(`${pointingPairsRef.current[1]?.id || 'p2'}_left`);
+            }
+          } else if (t < 8.25) {
+            if (pointingPairsRef.current.length > 1) {
+              setPointingCurrentPairIdx(1);
+              setActiveHighlight(`${pointingPairsRef.current[1]?.id || 'p2'}_right`);
+            }
+          } else {
+            setActiveHighlight(null);
+          }
+
+          if (t >= 9.6 || videoEl.ended) {
+            cancelAnimationFrame(animId);
+            resolve();
+            return;
+          }
+
+          animId = requestAnimationFrame(checkSync);
+        };
+
+        animId = requestAnimationFrame(checkSync);
+      });
+
+    } else {
+      // Fallback cho ảnh tĩnh hoặc video tùy chỉnh
+      const pairs = pointingPairsRef.current;
+      for (let i = 0; i < pairs.length; i++) {
+        const pair = pairs[i];
+        setPointingCurrentPairIdx(i);
+        setActiveHighlight(null);
+        await new Promise(res => setTimeout(res, 600));
+
+        // 1. Đọc và Highlight từ BÊN TRÁI
+        setActiveHighlight(`${pair.id}_left`);
+        const leftText = pair.left.speakText || pair.left.japanese || pair.left.romaji;
+        if (leftText) {
+          await speakText(leftText, false, { voiceURI: teacherVoiceURI, pitchVal: 1.05 });
+          await new Promise(res => setTimeout(res, 400));
+        }
+
+        setActiveHighlight(null);
+        await new Promise(res => setTimeout(res, 300));
+
+        // 2. Đọc và Highlight từ BÊN PHẢI
+        setActiveHighlight(`${pair.id}_right`);
+        const rightText = pair.right.speakText || pair.right.japanese || pair.right.romaji;
+        if (rightText) {
+          const rightPitch = pair.right.pitchText?.includes('⤵') ? 0.9 : 1.15;
+          await speakText(rightText, false, { voiceURI: teacherVoiceURI, pitchVal: rightPitch });
+          await new Promise(res => setTimeout(res, 400));
+        }
+
+        setActiveHighlight(null);
+        if (i < pairs.length - 1) {
+          await new Promise(res => setTimeout(res, 800));
+        }
       }
     }
 
     setActiveHighlight(null);
+    setIsPointingPlaying(false);
+    if (pointingVideoRef.current) {
+      pointingVideoRef.current.muted = true;
+    }
     if (audioRef.current) {
       audioRef.current.pause();
     }
@@ -3071,10 +3141,11 @@ export default function VocabVideoGenerator() {
                     <div className="absolute inset-0 z-0 flex items-end justify-center pointer-events-none select-none overflow-hidden">
                       {pointingCharacterMedia.type === 'video' ? (
                         <video
+                          ref={pointingVideoRef}
                           src={pointingCharacterMedia.url}
                           autoPlay
-                          loop
-                          muted
+                          loop={!isPointingPlaying}
+                          muted={!isPointingPlaying}
                           playsInline
                           className="w-full h-full object-cover object-bottom"
                         />
