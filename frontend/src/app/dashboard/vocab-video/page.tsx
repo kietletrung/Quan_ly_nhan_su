@@ -58,22 +58,42 @@ export interface PointingPair {
 const DEFAULT_POINTING_PAIRS: PointingPair[] = [
   {
     id: 'p1',
-    topic: 'Từ đồng âm khác nghĩa (はな)',
+    topic: 'Từ đồng âm khác nghĩa (しお)',
     left: {
-      romaji: 'hana',
-      emoji: '🌹',
-      japanese: 'はな',
-      pitchText: 'は ⤴ な',
-      meaning: 'bông hoa',
-      speakText: 'はな'
+      romaji: 'shio',
+      emoji: '🧂',
+      japanese: 'しお',
+      pitchText: 'し ⤵ お',
+      meaning: 'muối ăn',
+      speakText: 'しお'
     },
     right: {
-      romaji: 'hana',
-      emoji: '👃',
-      japanese: 'はな',
-      pitchText: 'は ⤵ な',
-      meaning: 'cái mũi',
-      speakText: 'はな'
+      romaji: 'shio',
+      emoji: '🌊',
+      japanese: 'しお',
+      pitchText: 'し ⤴ お',
+      meaning: 'thủy triều',
+      speakText: 'しお'
+    }
+  },
+  {
+    id: 'p2',
+    topic: 'Từ đồng âm khác nghĩa (さけ)',
+    left: {
+      romaji: 'sake',
+      emoji: '🍶',
+      japanese: 'さけ',
+      pitchText: 'さ ⤵ け',
+      meaning: 'rượu sake',
+      speakText: 'さけ'
+    },
+    right: {
+      romaji: 'sake',
+      emoji: '🐟',
+      japanese: 'さけ',
+      pitchText: 'さ ⤴ け',
+      meaning: 'cá hồi',
+      speakText: 'さけ'
     }
   },
   {
