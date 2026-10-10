@@ -302,10 +302,8 @@ export default function VocabVideoGenerator() {
     leftUrl?: string;
     rightUrl?: string;
   } | null>({
-    url: '/presenter-point-left.jpg',
-    type: 'pair',
-    leftUrl: '/presenter-point-left.jpg',
-    rightUrl: '/presenter-point-right.jpg'
+    url: '/teacher-blue-vertical.mp4',
+    type: 'video',
   });
   const [pointingCardTopOffset, setPointingCardTopOffset] = useState<number>(60);
   const [pointingCleanBackdrop, setPointingCleanBackdrop] = useState<boolean>(true);
@@ -2018,21 +2016,16 @@ export default function VocabVideoGenerator() {
                       <button
                         type="button"
                         onClick={() => {
-                          setPointingCharacterMedia({
-                            url: '/presenter-point-left.jpg',
-                            type: 'pair',
-                            leftUrl: '/presenter-point-left.jpg',
-                            rightUrl: '/presenter-point-right.jpg'
-                          });
+                          setPointingCharacterMedia({ url: '/teacher-blue-vertical.mp4', type: 'video' });
                           setPointingCardTopOffset(60);
                         }}
                         className={`text-xs px-2.5 py-1.5 rounded-lg border font-bold transition-all flex items-center gap-1.5 ${
-                          pointingCharacterMedia?.type === 'pair'
+                          pointingCharacterMedia?.url === '/teacher-blue-vertical.mp4'
                             ? 'bg-teal-600 text-white border-teal-600 shadow-sm'
                             : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
                         }`}
                       >
-                        👩‍🏫 Cô giáo áo xanh (Chỉ đổi tay Trái 👈 / Phải 👉)
+                        🌟 🎬 Video cô giáo áo xanh (Chuyển động nói người thật 100%)
                       </button>
 
                       <button
@@ -2048,6 +2041,26 @@ export default function VocabVideoGenerator() {
                         }`}
                       >
                         🎬 Video cô giáo Ngân Anh
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPointingCharacterMedia({
+                            url: '/presenter-point-left.jpg',
+                            type: 'pair',
+                            leftUrl: '/presenter-point-left.jpg',
+                            rightUrl: '/presenter-point-right.jpg'
+                          });
+                          setPointingCardTopOffset(60);
+                        }}
+                        className={`text-xs px-2.5 py-1.5 rounded-lg border font-bold transition-all flex items-center gap-1.5 ${
+                          pointingCharacterMedia?.type === 'pair'
+                            ? 'bg-teal-600 text-white border-teal-600 shadow-sm'
+                            : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        📸 Ảnh tĩnh đổi tay Trái/Phải
                       </button>
 
                       <label className="cursor-pointer text-xs px-2.5 py-1.5 rounded-lg border border-dashed border-teal-400 bg-white hover:bg-teal-50 text-teal-700 font-bold flex items-center gap-1">
@@ -3080,9 +3093,9 @@ export default function VocabVideoGenerator() {
                       className="absolute inset-x-0 top-0 z-[1] pointer-events-none transition-all duration-300"
                       style={{
                         height: `${pointingMaskHeight}%`,
-                        background: pointingCharacterMedia?.type === 'video'
+                        background: pointingCharacterMedia?.url === '/sample-pointing.mp4'
                           ? 'linear-gradient(180deg, #d3d6db 0%, #d3d6db 65%, #d4d7dc 82%, rgba(212,215,220,0) 100%)'
-                          : 'linear-gradient(180deg, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.1) 60%, rgba(0,0,0,0) 100%)',
+                          : 'linear-gradient(180deg, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0.1) 60%, rgba(0,0,0,0) 100%)',
                       }}
                     />
                   )}
